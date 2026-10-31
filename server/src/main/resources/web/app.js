@@ -3,7 +3,7 @@ const $ = id => document.getElementById(id);
 const names = { QUARK:"夸克网盘", UC:"UC 网盘", XUNLEI:"迅雷网盘", BAIDU:"百度网盘", C139:"139 网盘", PAN123:"123 云盘", PAN115:"115 网盘", GUANGYA:"光鸭云盘", ILANZOU:"蓝奏优享", LANZOU:"蓝奏云", GITHUB:"GitHub",
   VIDEO_BILIBILI:"哔哩哔哩", VIDEO_KUAISHOU:"快手", VIDEO_WEIBO:"微博", VIDEO_ACFUN:"AcFun", VIDEO_XHS:"小红书", VIDEO_PIXIV:"Pixiv" };
 const statuses = ["等待中","下载中","已暂停","已完成","失败"];
-let activeView = "cloud", accountStates = [], taskStates = [], taskFilter = "all", loggedIn = false, pendingRemoval = "", libraryTab = "bookmarks";
+let activeView = "resolve", accountStates = [], taskStates = [], taskFilter = "all", loggedIn = false, pendingRemoval = "", libraryTab = "bookmarks";
 let libraryData = {bookmarks:[],history:[]};
 let settingsGeneration = 0;
 const profilePending = new Set();
@@ -102,7 +102,7 @@ async function view(name) {
   if (name === "tasks") await refreshTasks();
   if (name === "resolve") await loadLibrary();
   if (name === "accounts") { await loadAccounts(); refreshProfiles(); }
-  if (name === "cloud" && !browsers.cloud && $("cloud-platform").value) await loadCloud();
+  if (name === "cloud" && !browsers.cloud && cloudPlatform) await loadCloud();
   if (name === "settings") {
     const generation = ++settingsGeneration;
     $("settings-form").querySelectorAll("input,button").forEach(node=>node.disabled=true);
@@ -166,7 +166,7 @@ function openAccount(platform = "") {
   $("account-title").textContent = platform ? "更新 "+names[platform]+" 凭证" : "添加网盘账号";
   accountFields(); $("account-dialog").showModal(); icons();
 }
-for (const id of ["account-add","cloud-add","empty-add"]) $(id).addEventListener("click", () => openAccount());
+for (const id of ["account-add","cloud-add"]) $(id).addEventListener("click", () => openAccount());
 $("account-platform").addEventListener("change", accountFields);
 $("close-account").addEventListener("click", () => $("account-dialog").close());
 $("account-form").addEventListener("submit", event => {
@@ -183,15 +183,6 @@ async function loadAccounts() {
   const data = await api("accounts");
   accountStates = data.filter(a => names[a.platform]);
   renderAccounts();
-  const previous = $("cloud-platform").value;
-  const accounts = accountStates.filter(a => a.configured && a.cloudSupported);
-  $("cloud-platform").replaceChildren(...accounts.map(a => {
-    const option = el("option","",names[a.platform]); option.value = a.platform; return option;
-  }));
-  if (accounts.some(a => a.platform === previous)) $("cloud-platform").value = previous;
-  $("cloud-empty").hidden = accounts.length > 0;
-  $("cloud-platform").disabled = !accounts.length; $("cloud-refresh").disabled = !accounts.length;
-  if (!accounts.length) { $("cloud-browser").replaceChildren(); $("cloud-capacity").textContent = ""; delete browsers.cloud; }
 }
 function renderAccounts() {
   const configured = accountStates.filter(a => a.configured), available = accountStates.filter(a => !a.configured);
@@ -217,7 +208,7 @@ function renderAccounts() {
       card.append(el("strong","capacity-value","—"),el("div","capacity-meta",profilePending.has(p) ? "读取容量中…" : p === "GITHUB" ? "代码托管账号" : account.profile ? "容量暂不可用" : "容量尚未读取"));
     }
     const actions = el("div","toolbar");
-    if (account.cloudSupported) actions.append(command("浏览文件","folder-open",async () => { await view("cloud"); $("cloud-platform").value = p; await loadCloud(); },"secondary"));
+    if (account.cloudSupported) actions.append(command("浏览文件","folder-open",async () => { await view("cloud"); await loadCloud(p); },"secondary"));
     actions.append(command("刷新容量","refresh-cw",() => refreshProfile(p)),command("更新凭证","key-round",() => openAccount(p)),command("移除账号","unlink",() => {
       pendingRemoval = p; $("confirm-text").textContent = "移除 "+names[p]+" 的凭证？已有下载文件会保留。"; $("confirm-dialog").showModal();
     }));
@@ -238,7 +229,6 @@ async function refreshProfile(platform) {
     if (account) account.profile = {error:error.message};
     if (loggedIn && activeView === "accounts") notice(names[platform]+"："+error.message,true);
   } finally { profilePending.delete(platform); renderAccounts(); }
-  updateCloudCapacity();
 }
 async function refreshProfiles() {
   for (const account of accountStates.filter(a => a.configured && !a.profile && a.platform !== "GITHUB")) {
@@ -251,30 +241,33 @@ $("confirm-remove").addEventListener("click", () => busy($("confirm-remove"),asy
   await api("accounts",{platform:pendingRemoval,credentials:{}});
   $("confirm-dialog").close(); delete browsers.cloud; await loadAccounts(); notice("账号已移除");
 }));
-function updateCloudCapacity() {
-  const q = accountStates.find(a => a.platform === $("cloud-platform").value)?.profile?.quota;
-  $("cloud-capacity").textContent = q?.total > 0 ? size(q.used)+" / "+size(q.total) : "";
-}
+let cloudPlatform = "";
 let cloudGeneration = 0;
-async function loadCloud() {
-  const platform = $("cloud-platform").value; if (!platform) return;
+async function loadCloud(platform) {
+  platform = platform || cloudPlatform; if (!platform) return;
+  cloudPlatform = platform;
   const generation = ++cloudGeneration;
+  $("cloud-title").textContent = names[platform] || platform;
   delete browsers.cloud; $("cloud-browser").replaceChildren(el("div","empty","[读取目录中…]"));
   try {
     const result = await api("cloud/files",{platform});
     if (generation !== cloudGeneration || !loggedIn) return;
     makeBrowser("cloud",result);
-    updateCloudCapacity();
   } catch (error) {
     if (generation === cloudGeneration) $("cloud-browser").replaceChildren(el("div","empty",error.message));
     throw error;
   }
 }
-$("cloud-platform").addEventListener("change", () => busy($("cloud-refresh"),loadCloud));
-$("cloud-refresh").addEventListener("click", () => busy($("cloud-refresh"),loadCloud));
 async function resolve(link,password = "") {
   const result = await api("resolve",{link,password});
   if (result.directUrl) { await api("direct",{url:result.directUrl,filename:result.filename}); notice("已加入下载"); await view("tasks"); return; }
+  if (result.kind === "video") {
+    $("share-browser").replaceChildren(); delete browsers.share;
+    renderVideo(result);
+    notice("视频解析完成");
+    return;
+  }
+  $("video-result").replaceChildren();
   makeBrowser("share",result);
   browsers.share.link = link; browsers.share.password = password;
   buildBrowser(browsers.share);
@@ -308,16 +301,7 @@ $("direct-form").addEventListener("submit",event => {
     $("direct-form").reset(); await view("tasks"); notice("已加入下载");
   });
 });
-// ---- 视频解析（实验）----
-let videoSession = null;
-$("video-form").addEventListener("submit",event => {
-  event.preventDefault(); busy(event.submitter,async () => {
-    videoSession = await api("video",{link:$("video-link").value});
-    $("video-link").value = "";
-    renderVideo(videoSession);
-    notice("视频解析完成");
-  });
-});
+// ---- 视频解析（实验）：与网盘分享共用同一输入栏，服务端自动分流（resolve 返回 kind:"video"）----
 function renderVideo(result) {
   const root = $("video-result"); root.replaceChildren();
   const card = el("article","video-card");
@@ -344,7 +328,7 @@ function renderVideo(result) {
     const indexes = checks.filter(c => c.checked).map(c => Number(c.dataset.index));
     if (!indexes.length) throw new Error("请选择要下载的媒体");
     await api("video/download",{id:result.id,indexes,threads:Number(threads.value)||0});
-    videoSession = null; root.replaceChildren();
+    root.replaceChildren();
     await view("tasks"); notice("已加入下载");
   },"primary"));
   card.append(list,actions); root.append(card); icons();

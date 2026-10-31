@@ -29,7 +29,8 @@ strong,b{font-weight:500}
 label{display:block;margin:20px 0 8px}
 input,textarea,select{width:100%;min-height:44px;background:transparent;border:1px solid var(--visible);border-radius:6px;padding:10px 12px;font-family:var(--body)}
 input:focus,textarea:focus,select:focus{outline:2px solid var(--display);outline-offset:2px}
-input[type=checkbox]{width:18px;min-height:18px;height:18px;accent-color:var(--display);margin:0;flex-shrink:0}
+input[type=checkbox]{width:18px;min-height:18px;height:18px;accent-color:var(--display);margin:0;flex-shrink:0;border:0;padding:0;border-radius:2px}
+input[type=checkbox]:focus,input[type=checkbox]:focus-visible{outline:none!important;box-shadow:none!important}
 textarea{resize:vertical;min-height:100px}
 select{background:var(--surface)}
 .password-field{display:flex;border:1px solid var(--visible);border-radius:6px}
