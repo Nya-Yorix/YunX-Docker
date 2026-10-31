@@ -522,6 +522,43 @@ suspend fun getDownloadLink(fid: String, cookie: String): DownloadLink? = withCo
         }.getOrNull()
     }
 
+    /**
+     * 校验型容量查询（accountInfo 用）：响应形状与夸克一致（status/code/message/data）。
+     * code=31001 登录态失效；14001/41020 令牌失效（UCApi.kt:406 注释）。
+     */
+    suspend fun quotaCheck(cookie: String): CredentialCheck = withContext(Dispatchers.IO) {
+        val url = "https://pc-api.uc.cn/1/clouddrive/member?pr=UCBrowser&fr=pc&fetch_subscribe=true&_ch=home"
+        try {
+            val request = Request.Builder()
+                .url(url)
+                .header("Cookie", cookie)
+                .header("User-Agent", UCConstants.CLOUD_UA)
+                .header("Origin", "https://drive.uc.cn")
+                .header("Referer", "https://drive.uc.cn/")
+                .get()
+                .build()
+            val response = client.newCall(request).execute()
+            val body = response.use { it.body?.string().orEmpty() }
+            val json = runCatching { JSONObject(body) }.getOrNull()
+                ?: return@withContext CredentialCheck.Unknown("UC 响应格式异常")
+            val status = json.optInt("status", -1)
+            val code = json.optInt("code", 0)
+            val message = json.optString("message")
+            if (status != 200) {
+                return@withContext if (code in setOf(31001, 14001, 41020) || message.contains("登录"))
+                    CredentialCheck.Invalid("UC 登录态已失效（code=$code）")
+                else CredentialCheck.Unknown("UC 接口返回 status=$status code=$code $message")
+            }
+            val data = json.optJSONObject("data")
+                ?: return@withContext CredentialCheck.Unknown("UC 响应缺少数据")
+            CredentialCheck.Valid(null, QuotaInfo(data.optLong("use_capacity"), data.optLong("total_capacity")))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            CredentialClassifier.classify(e)
+        }
+    }
+
     /** 云盘下载直链（抓包：个人云盘文件用 ?pr=UCBrowser&fr=pc&sys=win32&ve=1.6.1，非 entry=ft 分享通道） */
     suspend fun cloudGetDownloadLink(fid: String, cookie: String): DownloadLink? = withContext(Dispatchers.IO) {
         val body = JSONObject().put("fids", JSONArray().put(fid)).toString()

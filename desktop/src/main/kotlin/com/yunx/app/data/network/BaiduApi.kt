@@ -591,6 +591,39 @@ suspend fun listShare(surl: String, sekey: String, dir: String, cookie: String, 
         }.getOrNull()
     }
 
+    /**
+     * 校验型容量查询（accountInfo 用）：errno=-6 未登录/身份验证失败（BaiduApi.kt:162 注释背书）→ Invalid；
+     * 8888 限流（已有重试）与其余 errno → Unknown。
+     */
+    suspend fun quotaCheck(cookie: String): CredentialCheck = withContext(Dispatchers.IO) {
+        val url = "https://pan.baidu.com/api/quota?clienttype=0&app_id=${BaiduConstants.APP_ID}" +
+            "&web=1&channel=chunlei&version=${System.currentTimeMillis()}"
+        try {
+            val request = Request.Builder()
+                .url(url)
+                .header("Cookie", cookie)
+                .header("User-Agent", BaiduConstants.UA_WEB)
+                .header("X-Requested-With", "XMLHttpRequest")
+                .header("Referer", "https://pan.baidu.com/disk/main")
+                .get()
+                .build()
+            val response = client.newCall(request).execute()
+            val body = response.use { it.body?.string().orEmpty() }
+            val json = runCatching { JSONObject(body) }.getOrNull()
+                ?: return@withContext CredentialCheck.Unknown("百度响应格式异常")
+            val errno = json.optInt("errno", -1000)
+            when {
+                errno == 0 -> CredentialCheck.Valid(null, QuotaInfo(json.optLong("used"), json.optLong("total")))
+                errno == -6 -> CredentialCheck.Invalid("百度网盘登录已失效（errno=-6）")
+                else -> CredentialCheck.Unknown("百度接口返回 errno=$errno ${json.optString("err_msg")}")
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            CredentialClassifier.classify(e)
+        }
+    }
+
     // ---------- 公共 ----------
 
     /**

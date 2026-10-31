@@ -100,6 +100,25 @@ class Pan115Api(
         }.getOrNull()
     }
 
+    /**
+     * 校验型容量查询（accountInfo 用）：checkState 对 errno=990001 抛「登录已过期」（Pan115Constants:180）→ Invalid。
+     */
+    suspend fun quotaCheck(cookie: String): CredentialCheck = withContext(Dispatchers.IO) {
+        try {
+            val json = getJson(Pan115Constants.INDEX_INFO_URL, cookie, Pan115Constants.REFERER)
+            checkState(json, "获取空间信息失败")
+            val space = json.optJSONObject("data")?.optJSONObject("space_info")
+                ?: return@withContext CredentialCheck.Unknown("115 响应缺少数据")
+            val total = space.optJSONObject("all_total")?.optLong("size") ?: 0L
+            val used = space.optJSONObject("all_use")?.optLong("size") ?: 0L
+            CredentialCheck.Valid(null, QuotaInfo(used = used, total = total, usedInTrash = 0L))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            CredentialClassifier.classify(e)
+        }
+    }
+
     // ---------- 个人盘 ----------
 
     /** 列目录：`GET /files`（offset 为索引分页；文件夹用 cid、文件用 fid） */

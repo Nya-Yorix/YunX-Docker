@@ -388,6 +388,35 @@ class QuarkApi(
         }.getOrNull()
     }
 
+    /**
+     * 校验型容量查询（accountInfo 用）：不吞错，区分「登录态失效」与「暂时性失败」。
+     * member 响应 {status, code, message, data}——code=31001 为登录态失效（假 token 实测）。
+     */
+    suspend fun quotaCheck(cookie: String): CredentialCheck = withContext(Dispatchers.IO) {
+        val url = "https://drive-pc.quark.cn/1/clouddrive/member?pr=ucpro&fr=pc&fetch_subscribe=true&_ch=home"
+        try {
+            val response = client.newCall(get(url, cookie)).execute()
+            val body = response.use { it.body?.string().orEmpty() }
+            val json = runCatching { JSONObject(body) }.getOrNull()
+                ?: return@withContext CredentialCheck.Unknown("夸克响应格式异常")
+            val status = json.optInt("status", -1)
+            val code = json.optInt("code", 0)
+            val message = json.optString("message")
+            if (status != 200) {
+                return@withContext if (code == 31001 || message.contains("登录"))
+                    CredentialCheck.Invalid("夸克登录态已失效（code=$code）")
+                else CredentialCheck.Unknown("夸克接口返回 status=$status code=$code $message")
+            }
+            val data = json.optJSONObject("data")
+                ?: return@withContext CredentialCheck.Unknown("夸克响应缺少数据")
+            CredentialCheck.Valid(null, QuotaInfo(data.optLong("use_capacity"), data.optLong("total_capacity")))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            CredentialClassifier.classify(e)
+        }
+    }
+
     // ---------- 下载直链 ----------
 
     /**

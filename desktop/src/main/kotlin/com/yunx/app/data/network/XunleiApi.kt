@@ -670,6 +670,37 @@ class XunleiApi(
         }.getOrNull()
     }
 
+    /**
+     * 校验型容量查询（accountInfo 用）：panCall 内部对 401/unauthenticated 先自动刷新
+     * （refreshTokenProvider 由调用方注入）；刷新仍失败抛 QuarkApiException（消息含
+     * unauthenticated / 登录过期文案）→ 分类器判 Invalid；captcha_invalid 等归 Unknown。
+     */
+    suspend fun quotaCheck(
+        accessToken: String,
+        deviceId: String,
+        captchaToken: String
+    ): CredentialCheck = withContext(Dispatchers.IO) {
+        try {
+            panCall(captchaToken, deviceId, "GET:/drive/v1/about", { t ->
+                panRequest("${XunleiConstants.PAN_BASE}/drive/v1/about", accessToken, deviceId, t)
+            }) { data ->
+                val quota = data.optJSONObject("quota")
+                CredentialCheck.Valid(
+                    null,
+                    QuotaInfo(
+                        used = quota?.optLong("usage") ?: 0L,
+                        total = quota?.optLong("limit") ?: 0L,
+                        usedInTrash = quota?.optLong("usage_in_trash") ?: 0L
+                    )
+                )
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            CredentialClassifier.classify(e)
+        }
+    }
+
     /** 重命名（PATCH /drive/v1/files/{id}，body {"name"}） */
     suspend fun renameFile(
         fileId: String,

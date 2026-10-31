@@ -289,6 +289,30 @@ class GuangYaApi(
             }.getOrNull()
         }
 
+    /**
+     * 校验型容量查询（accountInfo 用）：checkBusiness 抛错带 code；
+     * token 失效码库内无常量，由假 token 实测沉淀（CredentialClassifier 码表）。
+     */
+    suspend fun quotaCheck(accessToken: String, device: GuangYaDevice): CredentialCheck =
+        withContext(Dispatchers.IO) {
+            try {
+                val json = executeJson(
+                    businessRequest(GuangYaConstants.GET_ASSETS, JSONObject().toString(), device, accessToken).build()
+                )
+                checkBusiness(json, "获取容量信息失败")
+                val data = dataOf(json) ?: return@withContext CredentialCheck.Unknown("光鸭响应缺少数据")
+                val total = data.optString("totalSpaceSize").toLongOrNull()
+                    ?: data.optLong("totalSpaceSize")
+                if (total < 0) return@withContext CredentialCheck.Unknown("光鸭容量数据异常")
+                val used = data.optString("usedSpaceSize").toLongOrNull() ?: 0L
+                CredentialCheck.Valid(null, QuotaInfo(used = used, total = total))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                CredentialClassifier.classify(e)
+            }
+        }
+
     // ---------- 分享 ----------
 
     /** 分享摘要标题。 */

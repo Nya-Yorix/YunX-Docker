@@ -554,6 +554,39 @@ class C139Api(
         }.getOrNull()
     }
 
+    /**
+     * 校验型容量查询（accountInfo 用）：Cookie 提不出 Authorization 属凭证格式坏 → Invalid；
+     * checkCloud 抛错（含 code，04000005=认证失败）交分类器按码归类。
+     */
+    suspend fun quotaCheck(cookie: String): CredentialCheck = withContext(Dispatchers.IO) {
+        try {
+            val authorization = C139Constants.extractAuthorization(cookie)
+                ?: return@withContext CredentialCheck.Invalid("139 凭证缺少 Authorization 字段")
+            val account = accountFromAuthorization(authorization)
+                ?: return@withContext CredentialCheck.Invalid("139 凭证格式无效")
+            val req = JSONObject()
+                .put("userDomainId", "")
+                .put("commonAccountInfo", JSONObject().put("account", account).put("accountType", 1))
+            val resp = cloudPost(
+                "https://user-njs.yun.139.com/user/disk/quota/detail",
+                req.toString(), authorization, cookie, needSkey = true
+            )
+            checkCloud(resp, "获取空间详情失败")
+            val data = resp.optJSONObject("data")
+                ?: return@withContext CredentialCheck.Unknown("139 响应缺少数据")
+            val total = data.optLong("diskSize") * 1024L * 1024L
+            val used = data.optLong("freeDiskSize").let { free ->
+                data.optJSONArray("quotaList")?.optJSONObject(0)?.optLong("usedSize")?.times(1024L * 1024L)
+                    ?: (total - free * 1024L * 1024L)
+            }
+            CredentialCheck.Valid(null, QuotaInfo(used = used, total = total))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            CredentialClassifier.classify(e)
+        }
+    }
+
     // ---------- 转存（分享导入，share host AES 加密） ----------
 
     /** 创建转存任务，返回 taskID（含 sk* 前缀） */

@@ -83,16 +83,30 @@ class LanzouApi(
             .get()
             .build()
         client.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) throw IllegalStateException("蓝奏登录态无效，请重新登录")
+            if (resp.code == 401 || resp.code == 403) throw IllegalStateException("蓝奏登录态无效，请重新登录（HTTP ${resp.code}）")
+            if (!resp.isSuccessful) throw IllegalStateException("蓝奏接口异常（HTTP ${resp.code}）")
             val html = resp.body?.string().orEmpty()
             // 文件页里形如：url:'/doupload.php?uid=4133097', data:{ 'vei':'B1UHVFBWVQgFB1JWAFo=' }
             // uid 出现在 URL（uid=数字）；vei 带引号包裹、值为含 '=' 的 base64 —— 两者都要兼容。
             val uid = Regex("""uid['"]?\s*[=:]\s*['"]?(\d{1,20})""").find(html)?.groupValues?.get(1)
             val vei = Regex("""vei['"]?\s*[=:]\s*['"]?([A-Za-z0-9_\-+/=]{1,256})""").find(html)?.groupValues?.get(1)
             if (uid.isNullOrBlank() || vei.isNullOrBlank()) {
+                // 200 却拿不到 uid/vei：被重定向到登录页，属登录态失效（网络故障已在上方按状态码分流）
                 throw IllegalStateException("蓝奏登录态无效，请重新登录")
             }
             LanzouLoginParams(uid, vei)
+        }
+    }
+
+    /** 校验型登录检查（accountInfo 用）：蓝奏云无容量接口，能取到 uid/vei 即视为有效。 */
+    suspend fun quotaCheck(cookie: String): CredentialCheck = withContext(Dispatchers.IO) {
+        try {
+            fetchLoginParams(cookie)
+            CredentialCheck.Valid(null, null)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            CredentialClassifier.classify(e)
         }
     }
 

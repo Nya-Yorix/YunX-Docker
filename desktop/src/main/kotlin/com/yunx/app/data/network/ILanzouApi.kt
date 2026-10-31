@@ -99,6 +99,27 @@ class ILanzouApi(
         }.getOrNull()
     }
 
+    /**
+     * 校验型容量查询（accountInfo 用）：exec/checkCode 对 HTTP 401/403、code -1/-2 抛
+     * ILanzouLoginExpired（固定文案「蓝奏优享登录已过期」）→ 分类器按文案判 Invalid。
+     */
+    suspend fun quotaCheck(appToken: String, uuid: String): CredentialCheck = withContext(Dispatchers.IO) {
+        try {
+            val url = buildUrl(ILanzouConstants.ACCOUNT_MAP, uuid, appToken, extra = true, params = emptyList())
+            val json = exec(Request.Builder().url(url).headers(commonHeaders(false)).get().build())
+            val map = json.optJSONObject("map")
+                ?: return@withContext CredentialCheck.Unknown("蓝奏优享响应缺少数据")
+            val used = map.optLong("usedSize", 0L) * 1024L
+            val total = (map.optLong("totalSize", 0L) + map.optLong("vipSize", 0L) +
+                map.optLong("rewardSize", 0L)) * 1024L
+            CredentialCheck.Valid(null, QuotaInfo(used = used, total = total))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            CredentialClassifier.classify(e)
+        }
+    }
+
     // ---------- 文件管理 ----------
 
     /** 文件列表（文档 §3.1）：自动翻页，合并文件夹与文件。 */

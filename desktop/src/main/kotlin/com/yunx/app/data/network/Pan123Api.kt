@@ -177,6 +177,31 @@ class Pan123Api(
         }.getOrNull()
     }
 
+    /**
+     * 校验型容量查询（accountInfo 用）：user/info 同时带昵称与空间，checkOk 抛错带 code；
+     * token 失效的 code 值由假 token 实测沉淀进 CredentialClassifier 码表。
+     */
+    suspend fun quotaCheck(token: String): CredentialCheck = withContext(Dispatchers.IO) {
+        try {
+            val json = getAuth(Pan123Constants.USER_INFO_URL, "/b/api/user/info", token)
+            checkOk(json, "获取用户信息失败")
+            val data = json.optJSONObject("data")
+                ?: return@withContext CredentialCheck.Unknown("123 响应缺少数据")
+            val nickname = data.optString("Nickname").takeIf { it.isNotBlank() }
+            CredentialCheck.Valid(
+                nickname,
+                QuotaInfo(
+                    used = data.optLong("SpaceUsed"),
+                    total = data.optLong("SpacePermanent") + data.optLong("SpaceTemp")
+                )
+            )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            CredentialClassifier.classify(e)
+        }
+    }
+
     // ---------- 分享文件列表（文档 §5.2，匿名、无签名） ----------
 
     /**
