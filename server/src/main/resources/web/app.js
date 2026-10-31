@@ -108,7 +108,7 @@ async function view(name) {
     $("settings-form").querySelectorAll("input,button").forEach(node=>node.disabled=true);
     const data = await api("settings");
     if (generation !== settingsGeneration) return;
-    $("setting-threads").value = data.threads; $("setting-concurrency").value = data.concurrency;
+    $("setting-concurrency").value = data.concurrency;
     $("setting-speed").value = +(data.speedLimit/1048576).toFixed(2);
     $("settings-form").querySelectorAll("input,button").forEach(node=>node.disabled=false);
   }
@@ -191,11 +191,12 @@ function renderAccounts() {
   $("account-list").replaceChildren();
   if (!configured.length) $("account-list").append(el("div","empty","尚未添加账号"));
   for (const account of configured) {
-    const p = account.platform, card = el("article","account-card"); card.dataset.platform = p;
+    const p = account.platform;
+    const noQuota = p === "GITHUB" || p.startsWith("VIDEO_");
+    const card = el("article","account-card"+(noQuota ? " compact" : "")); card.dataset.platform = p;
     const head = el("div","account-head"), info = el("div");
     info.append(el("h2","",names[p]),el("span","metadata", account.profile?.nickname || "已配置凭证"));
     head.append(icon("cloud"),info); card.append(head);
-    const noQuota = p === "GITHUB" || p.startsWith("VIDEO_");
     const q = noQuota ? null : account.profile?.quota;
     if (q && q.total > 0) {
       const value = el("strong","capacity-value",size(q.used)); value.append(el("small","","已用")); card.append(value);
@@ -562,9 +563,43 @@ $("resume-all").addEventListener("click",() => busy($("resume-all"),() => taskBa
 $("settings-form").addEventListener("submit",event => {
   event.preventDefault(); busy(event.submitter,async () => {
     notice("",false,"settings-status");
-    await api("settings",{threads:Number($("setting-threads").value),concurrency:Number($("setting-concurrency").value),speedLimit:Math.round(Number($("setting-speed").value)*1048576)});
+    await api("settings",{concurrency:Number($("setting-concurrency").value),speedLimit:Math.round(Number($("setting-speed").value)*1048576)});
     notice("下载设置已保存",false,"settings-status");
   },"settings-status");
+});
+// ---- 各平台下载线程（设置页弹窗；服务端与桌面版同源持久化，迅雷固定 8）----
+function platformLabel(key) {
+  if (!key || key === "generic") return "通用（直链 / 未单独配置）";
+  return names[key.toUpperCase()] || key;
+}
+async function openThreadsDialog() {
+  const data = await api("settings");
+  $("threads-rows").replaceChildren(...data.platformThreads.map(row => {
+    const wrap = el("div","threads-row");
+    const label = el("label","",platformLabel(row.platform)); label.htmlFor = "thread-"+row.platform;
+    const input = el("input"); input.type = "number"; input.id = "thread-"+row.platform;
+    input.min = "1"; input.max = "512"; input.value = row.threads; input.dataset.platform = row.platform;
+    input.setAttribute("aria-label",platformLabel(row.platform)+" 下载线程数");
+    if (row.fixed) { input.disabled = true; wrap.append(label,input,el("span","metadata","固定 8")); }
+    else wrap.append(label,input);
+    return wrap;
+  }));
+  $("threads-status").textContent = "";
+  $("threads-dialog").showModal(); icons();
+}
+$("threads-config").addEventListener("click", () => busy($("threads-config"), openThreadsDialog));
+$("threads-close").addEventListener("click", () => $("threads-dialog").close());
+$("threads-form").addEventListener("submit",event => {
+  event.preventDefault(); busy(event.submitter,async () => {
+    const threads = {};
+    for (const input of $("threads-rows").querySelectorAll("input:not([disabled])")) {
+      const value = Number(input.value);
+      if (!Number.isInteger(value) || value < 1 || value > 512) throw new Error(platformLabel(input.dataset.platform)+"：线程数需为 1–512");
+      threads[input.dataset.platform] = value;
+    }
+    await api("settings/threads",{threads});
+    $("threads-dialog").close(); notice("各平台线程配置已保存");
+  },"threads-status");
 });
 // ---- 账号备份（与桌面版 .yunx 格式互通）----
 let backupFile = null;

@@ -74,7 +74,7 @@
       <section id="settings-view" hidden>
         <div class="page-heading"><div><span class="eyebrow">WORKSPACE SETTINGS</span><h1>设置</h1></div></div>
         <div class="settings-section"><div><h2>下载设置</h2><span class="metadata">TRANSFER</span></div><form id="settings-form">
-          <div class="form-grid"><div><label for="setting-threads">每个任务的线程数</label><input id="setting-threads" type="number" min="1" max="128" required></div><div><label for="setting-concurrency">同时下载任务数</label><input id="setting-concurrency" type="number" min="1" max="10" required></div></div>
+          <div class="form-grid"><div><label>各平台下载线程</label><button id="threads-config" class="secondary" type="button"><i data-lucide="cpu"></i>配置各平台线程</button></div><div><label for="setting-concurrency">同时下载任务数</label><input id="setting-concurrency" type="number" min="1" max="10" required></div></div>
           <label for="setting-speed">总限速 · MiB/s，0 为不限速</label><input id="setting-speed" type="number" min="0" max="953674" step="0.01" required>
           <p id="settings-status" class="inline-status" role="status"></p><button class="secondary" type="submit"><i data-lucide="save"></i>保存设置</button>
         </form></div>
@@ -103,6 +103,15 @@
     </form>
   </dialog>
   <dialog id="confirm-dialog"><div class="dialog-heading"><h2>移除账号</h2></div><p id="confirm-text"></p><div class="toolbar"><button id="confirm-cancel" class="secondary" type="button">取消</button><button id="confirm-remove" class="destructive" type="button">移除</button></div></dialog>
+  <dialog id="threads-dialog">
+    <div class="dialog-heading"><h2>各平台下载线程</h2><button id="threads-close" class="icon-button" type="button" title="关闭" aria-label="关闭"><i data-lucide="x"></i></button></div>
+    <form id="threads-form">
+      <p class="metadata">分片并发线程数；「通用」用于直链与未单独配置的平台，迅雷固定 8。范围 1–512。</p>
+      <div id="threads-rows" class="threads-rows"></div>
+      <p id="threads-status" class="inline-status" role="status"></p>
+      <div class="toolbar"><button class="primary" type="submit"><i data-lucide="save"></i>保存配置</button></div>
+    </form>
+  </dialog>
   <dialog id="backup-dialog">
     <div class="dialog-heading"><h2>账号备份</h2><button id="backup-close" class="icon-button" type="button" title="关闭" aria-label="关闭"><i data-lucide="x"></i></button></div>
     <div class="segmented" id="backup-tabs" role="group" aria-label="备份操作">
