@@ -49,6 +49,7 @@ kotlin.sourceSets["main"].kotlin.apply {
     srcDir(generateAppVersion)
     include("com/yunx/server/**")
     include("com/yunx/app/AppContext.kt")
+    include("com/yunx/app/AppVersion.kt")
     include("com/yunx/app/data/db/**", "com/yunx/app/data/security/**")
     include("com/yunx/app/data/backup/AuthCrypto.kt")
     include("com/yunx/app/data/network/**", "com/yunx/app/data/download/**")

@@ -158,7 +158,7 @@ class ServerService(
         if (video.platforms.containsKey(requested)) {
             val profile = video.accountInfo(requested)
             profiles[requested] = profile
-            return profile
+            return@withTimeout profile
         }
         val p = SharePlatform.valueOf(requested)
         val c = credentials.credential(p.name)

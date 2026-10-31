@@ -7,6 +7,7 @@ import com.yunx.app.data.network.HttpClients
 import com.yunx.app.data.network.video.AcFunParser
 import com.yunx.app.data.network.video.BilibiliParser
 import com.yunx.app.data.network.video.DetectedVideoLink
+import com.yunx.app.data.network.video.KuaishouParser
 import com.yunx.app.data.network.video.PixivParser
 import com.yunx.app.data.network.video.QualitySelectableParser
 import com.yunx.app.data.network.video.VideoHttp
@@ -15,6 +16,8 @@ import com.yunx.app.data.network.video.VideoMediaKind
 import com.yunx.app.data.network.video.VideoParseResult
 import com.yunx.app.data.network.video.VideoParser
 import com.yunx.app.data.network.video.VideoPlatform
+import com.yunx.app.data.network.video.WeiboParser
+import com.yunx.app.data.network.video.XhsParser
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID

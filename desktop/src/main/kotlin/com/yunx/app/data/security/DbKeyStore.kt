@@ -141,7 +141,12 @@ object DbKeyStore {
 
     /** 按档位包裹并落盘：先写临时文件 → 立刻读回验证 → 原子替换 */
     private fun writeWrapAtomically(file: File, key: ByteArray, level: DbEncryptionLevel) {
-        val content = when (level) {
+        // 非 Windows 无法派生机器指纹（MachineGuid 是 Windows 注册表）也没有 DPAPI：
+        // 「本机绑定」档位在落盘时降为「宽松」，否则全新环境创建密钥会直接抛
+        // MachineFingerprintUnavailable，凭证系统整体不可用。已存在的包裹密钥不受影响
+        // （解包按文件里的实际格式走，Windows 绑定的密钥在 Linux 上仍正确地解不开）。
+        val effective = if (level.isMachineBound && !isWindows()) DbEncryptionLevel.LOOSE else level
+        val content = when (effective) {
             DbEncryptionLevel.LOOSE -> key
             DbEncryptionLevel.NORMAL -> wrapMachineKey(key).toByteArray(Charsets.UTF_8)
             DbEncryptionLevel.STRICT -> wrapDpapi(key).toByteArray(Charsets.UTF_8)
@@ -151,8 +156,8 @@ object DbKeyStore {
         val tmp = File(file.parentFile, "${file.name}.tmp")
         tmp.writeBytes(content)
         // 读回验证：确保这把密钥确实能解开（写坏了就立刻发现，而不是下次启动才发现）
-        if (level != DbEncryptionLevel.LOOSE) {
-            val check = unwrap(String(tmp.readBytes(), Charsets.UTF_8), level)
+        if (effective != DbEncryptionLevel.LOOSE) {
+            val check = unwrap(String(tmp.readBytes(), Charsets.UTF_8), effective)
             require(check.contentEquals(key)) { "密钥回读校验失败" }
         }
         runCatching {
@@ -164,7 +169,7 @@ object DbKeyStore {
             // 少数文件系统不支持原子移动：退化为普通替换
             Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
         }
-        Log.i(TAG, "凭证密钥已按「${level.label}」档写入：${file.name}")
+        Log.i(TAG, "凭证密钥已按「${effective.label}」档写入：${file.name}")
     }
 
     /** 普通档：机器派生密钥 + AES-GCM */
