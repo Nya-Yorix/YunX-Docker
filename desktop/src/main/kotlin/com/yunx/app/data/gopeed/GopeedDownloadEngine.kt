@@ -9,8 +9,15 @@ object GopeedDownloadEngine : ExternalDownloadEngine {
     override fun start(directory: File) = GopeedEngine.start(directory)
     override fun settingsSignature() = GopeedEngine.settingsSignature()
     override fun applyRuntimeConfig(maxRunning: Int) = GopeedEngine.applyRuntimeConfig(maxRunning)
-    override fun createTask(url: String, saveDir: String, fileName: String, headers: Map<String, String>, connections: Int, label: String) =
-        GopeedEngine.createTask(url, saveDir, fileName, headers, connections, label)
+    override fun createTask(
+        url: String,
+        saveDir: String,
+        fileName: String,
+        headers: Map<String, String>,
+        connections: Int,
+        label: String,
+        trackers: List<String>
+    ) = GopeedEngine.createTask(url, saveDir, fileName, headers, connections, label, trackers)
     override fun pauseTask(id: String) = GopeedEngine.pauseTask(id)
     override fun continueTask(id: String) = GopeedEngine.continueTask(id)
     override fun deleteTask(id: String) = GopeedEngine.deleteTask(id)
@@ -21,4 +28,7 @@ object GopeedDownloadEngine : ExternalDownloadEngine {
     override fun taskDetail(id: String) = GopeedEngine.taskDetail(id).let {
         ExternalDownloadEngine.TaskDetail(it.name, it.fileCount, it.folder)
     }
+    override fun taskError(id: String): String? = GopeedEngine.taskError(id)
+    override fun taskPeerInfo(id: String): ExternalDownloadEngine.PeerView? =
+        GopeedEngine.taskPeerInfo(id)?.let { ExternalDownloadEngine.PeerView(it.seeds, it.peers, it.total) }
 }

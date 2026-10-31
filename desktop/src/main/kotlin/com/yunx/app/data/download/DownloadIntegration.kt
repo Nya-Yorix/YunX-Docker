@@ -13,18 +13,36 @@ interface DownloadSystemEvents {
 interface ExternalDownloadEngine {
     data class TaskView(val id: String, val status: String, val downloaded: Long, val total: Long, val speed: Long)
     data class TaskDetail(val name: String, val fileCount: Int, val folder: Boolean)
+
+    /** P2P（BT/ed2k）任务的 peer 概览；HTTP 任务或老内核取不到时为 null（-1 = 不适用/未知） */
+    data class PeerView(val seeds: Int, val peers: Int, val total: Int)
+
     fun isInstalled(): Boolean
     fun isRunning(): Boolean
     fun start(directory: File): Int
     fun settingsSignature(): String
     fun applyRuntimeConfig(maxRunning: Int): Int?
-    fun createTask(url: String, saveDir: String, fileName: String, headers: Map<String, String>, connections: Int, label: String): String
+    fun createTask(
+        url: String,
+        saveDir: String,
+        fileName: String,
+        headers: Map<String, String>,
+        connections: Int,
+        label: String,
+        trackers: List<String> = emptyList()
+    ): String
     fun pauseTask(id: String)
     fun continueTask(id: String)
     fun deleteTask(id: String)
     fun taskStatus(id: String): TaskView
     fun taskConnections(id: String): Int?
     fun taskDetail(id: String): TaskDetail
+
+    /** 引擎任务的失败详情（Task.error / 原始 JSON，用于日志与失败原因）；取不到返回 null */
+    fun taskError(id: String): String? = null
+
+    /** P2P 任务的 peer 概览；HTTP 任务 / 老版本内核返回 null */
+    fun taskPeerInfo(id: String): PeerView? = null
 }
 
 /**
