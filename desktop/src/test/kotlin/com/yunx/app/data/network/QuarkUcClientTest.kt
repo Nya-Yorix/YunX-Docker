@@ -77,7 +77,11 @@ class QuarkUcClientTest {
     @Test
     fun quotaCheckClassifiesInvalidByPlatformCodeTable() = runBlocking {
         // code=14001：UC 的失效码表内有（14001），夸克表内没有 —— 同一响应两种判定
-        val server = serverWith(envelope("""{"status":400,"code":14001,"message":"token"}"""))
+        // （两个请求共用同一 MockWebServer，需入队两份响应，否则 QueueDispatcher 阻塞）
+        val server = serverWith(
+            envelope("""{"status":400,"code":14001,"message":"token"}"""),
+            envelope("""{"status":400,"code":14001,"message":"token"}""")
+        )
         try {
             val client = mockClient(server)
             val quark = QuarkApi(clientProvider = { client }).quotaCheck("c")
