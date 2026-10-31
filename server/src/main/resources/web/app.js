@@ -240,7 +240,7 @@ async function refreshProfile(platform) {
   try {
     const profile = await api("account-info",{platform});
     const account = accountStates.find(a => a.platform === platform);
-    if (account?.configured) account.profile = profile;
+    if (account?.configured) { account.profile = profile; notice("", false); }
   } catch (error) {
     const account = accountStates.find(a => a.platform === platform);
     if (account) account.profile = {error:error.message, auth:error.kind === "auth"};
