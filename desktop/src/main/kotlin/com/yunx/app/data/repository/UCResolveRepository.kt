@@ -161,8 +161,8 @@ class UCResolveRepository(private val api: UCApi) : ShareResolveRepository {
         api.getGuestShareDownloadLink(
             fid = file.fid,
             fidToken = file.fidToken,
-            stoken = session.stoken,
-            pwdId = session.shareId
+            shareId = session.shareId,
+            stoken = session.stoken
         ) ?: throw IllegalStateException("获取下载链接失败")
     }.fold(
         onSuccess = { Result.success(it) },
