@@ -19,8 +19,8 @@ import javax.crypto.spec.SecretKeySpec
 /** 蓝奏优享账号信息。 */
 data class ILanzouAccountInfo(val userId: String, val account: String, val nickname: String)
 
-/** 登录失效标记（服务端 code -1 / -2 或 401/403）。 */
-private class ILanzouLoginExpired : Exception("蓝奏优享登录已过期，请重新登录")
+/** 登录失效标记（服务端 code -1 / -2 或 401/403）；detail 携带状态码/上游消息便于定位是哪一种。 */
+private class ILanzouLoginExpired(val detail: String = "") : Exception("蓝奏优享登录已过期，请重新登录$detail")
 
 /** 访问验证（409 + text/html）标记。 */
 private class ILanzouAccessChallenge : Exception()
@@ -567,7 +567,7 @@ class ILanzouApi(
             val contentType = resp.header("Content-Type").orEmpty()
             val body = resp.body?.string().orEmpty()
             if (!resp.isSuccessful) {
-                if (resp.code == 401 || resp.code == 403) throw ILanzouLoginExpired()
+                if (resp.code == 401 || resp.code == 403) throw ILanzouLoginExpired("（HTTP ${resp.code}）")
                 if (resp.code == 409 && contentType.contains("text/html")) throw ILanzouAccessChallenge()
                 throw IllegalStateException("蓝奏优享请求失败（${resp.code}），请检查登录信息或稍后重试")
             }
@@ -583,7 +583,7 @@ class ILanzouApi(
     private fun checkCode(json: JSONObject) {
         val code = json.optInt("code", -1)
         if (code == 200) return
-        if (code == -1 || code == -2) throw ILanzouLoginExpired()
+        if (code == -1 || code == -2) throw ILanzouLoginExpired("（业务码 code=$code ${json.optString("msg")}".take(150) + "）")
         throw IllegalStateException("蓝奏优享请求失败（$code），请检查登录信息或稍后重试")
     }
 

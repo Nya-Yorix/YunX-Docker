@@ -291,7 +291,8 @@ class ServerService(
         val c = credentials.credential(p.name)
         require(c.isNotBlank()) { "请先添加网盘账号" }
         require(p != SharePlatform.GITHUB) { "请使用 GitHub 仓库入口" }
-        val root = when (p) { SharePlatform.BAIDU -> "/"; SharePlatform.C139, SharePlatform.XUNLEI -> ""; SharePlatform.LANZOU -> "-1"; else -> "0" }
+        // 根目录约定对齐桌面版：百度/139 用 "/"，迅雷用空串，蓝奏云用 "-1"，其余 "0"
+        val root = when (p) { SharePlatform.BAIDU, SharePlatform.C139 -> "/"; SharePlatform.XUNLEI -> ""; SharePlatform.LANZOU -> "-1"; else -> "0" }
         val session = if (existing.isBlank()) CloudSession(p, revisions[p.name] ?: 0L).apply { dirs.add(root) }
             else cloudSessions[existing] ?: error("目录会话已失效")
         return session.mutex.withLock {
@@ -316,8 +317,16 @@ class ServerService(
                 }
                 SharePlatform.GUANGYA -> GuangYaApi().apply { deviceIdProvider = { a.optString("deviceId") } }.listCloudFiles(c, dir)
                 SharePlatform.XUNLEI -> {
-                    require(a.optString("authType") != "webToken") { "个人网盘浏览需要迅雷 App 通道凭证" }
-                    XunleiApi().getFiles(dir, c, a.optString("deviceId"), a.optString("captchaToken")) ?: error("无法获取迅雷目录")
+                    // 网页通道 token 实测同样可列个人目录（quota/列表同走 drive API）；
+                    // 401 自动刷新一次（App 通道用 refreshToken，网页通道刷新失败再报登录过期）
+                    XunleiApi().apply {
+                        refreshTokenProvider = { deviceId ->
+                            runCatching {
+                                refreshToken(a.optString("refreshToken"), deviceId, a.optString("authType"))
+                            }.getOrNull()
+                        }
+                    }.getFiles(dir, c, a.optString("deviceId"), a.optString("captchaToken"))
+                        ?: error("无法获取迅雷目录")
                 }
                 SharePlatform.LANZOU -> LanzouApi().let { api ->
                     val params = api.fetchLoginParams(c) ?: error("凭证无效")
