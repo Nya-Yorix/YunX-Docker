@@ -35,13 +35,23 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class VideoService(private val credentials: Credentials) {
 
-    /** 平台 key（凭证存储键）→ 解析器；key 顺序即账号页展示顺序 */
+    /** 平台 key（凭证存储键）→ 解析器；key 顺序即解析时的查找顺序 */
     val platforms: Map<String, VideoParser> = linkedMapOf(
         "VIDEO_BILIBILI" to BilibiliParser,
         "VIDEO_KUAISHOU" to KuaishouParser,
         "VIDEO_WEIBO" to WeiboParser,
         "VIDEO_ACFUN" to AcFunParser,
         "VIDEO_XHS" to XhsParser,
+        "VIDEO_PIXIV" to PixivParser,
+    )
+
+    /**
+     * 账号页提供 Cookie 配置的平台。快手/微博/AcFun/小红书匿名即可解析（上游约定），
+     * 不提供配置入口；哔哩哔哩登录后取高清，Pixiv 需登录态拿全量。
+     * 解析时仍会读取历史保存过的 Cookie（如果有的话），只是不再展示配置入口。
+     */
+    val configurable: Map<String, VideoParser> = linkedMapOf(
+        "VIDEO_BILIBILI" to BilibiliParser,
         "VIDEO_PIXIV" to PixivParser,
     )
 
@@ -138,7 +148,7 @@ class VideoService(private val credentials: Credentials) {
 
     /** 账号页「刷新昵称」：用解析器自己的校验逻辑问一次平台；凭证无效抛错 */
     suspend fun accountInfo(key: String): JSONObject {
-        val parser = platforms.getValue(key)
+        val parser = configurable.getValue(key)
         val cookie = credentials.credential(key)
         require(cookie.isNotBlank()) { "请先添加账号" }
         val nickname = parser.validateCookie(cookie) ?: error("Cookie 无效或已过期")
@@ -152,6 +162,8 @@ class VideoService(private val credentials: Credentials) {
     /** 保存/清除视频平台 Cookie（credentials 为空对象 = 移除账号，与网盘账号同一套语义） */
     fun saveCookie(key: String, input: JSONObject) {
         require(platforms.containsKey(key)) { "未知平台" }
+        // 免登录平台不接受新的 Cookie 配置；但保留清除入口（历史保存过的凭证可以移除）
+        require(input.length() == 0 || configurable.containsKey(key)) { "该平台免登录，无需配置凭证" }
         require(input.keySet().all { it == "cookie" }) { "视频平台仅支持 Cookie" }
         require(input.keySet().all { input.get(it) is String && input.getString(it).length <= 65536 }) { "凭证格式错误" }
         val value = input.optString("cookie").trim()

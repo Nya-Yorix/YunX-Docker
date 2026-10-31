@@ -54,9 +54,9 @@ class ServerService(
     private val githubBrowser = GitHubBrowser(github)
     val video = VideoService(credentials)
 
-    fun exportAccounts(password: String): String = AccountBackup.export(credentials, password)
+    fun exportAccounts(password: String): String = AccountBackup.export(credentials, password, video.platforms.keys)
     fun importAccounts(content: String, password: String): Int {
-        val values = AccountBackup.decode(content, password)
+        val values = AccountBackup.decode(content, password, video.platforms.keys)
         credentials.saveAll(values)
         values.keys.forEach { revisions.merge(it, 1L, Long::plus); profiles.remove(it) }
         sessions.clear()
@@ -65,6 +65,28 @@ class ServerService(
         return values.size
     }
 
+    /** 账号备份导出：与桌面版 .yunx 格式互通（AuthCrypto AES-GCM + yunx_auth_backup v1 信封） */
+    fun backupExport(body: JSONObject): JSONObject {
+        val password = body.getString("password")
+        require(password.length in 8..256) { "备份口令至少 8 位" }
+        return JSONObject()
+            .put("content", exportAccounts(password))
+            .put("filename", backupFileName())
+    }
+
+    /** 账号备份导入：恢复各平台凭证（含视频平台），返回恢复的平台数 */
+    fun backupImport(body: JSONObject): JSONObject {
+        val password = body.optString("password")
+        val content = body.optString("content")
+        require(password.length >= 8) { "备份口令至少 8 位" }
+        require(content.length <= 2 * 1024 * 1024) { "备份文件过大（上限 2MB）" }
+        return JSONObject().put("imported", importAccounts(content, password))
+    }
+
+    private fun backupFileName(): String =
+        "yunx_auth_backup_" + java.time.LocalDateTime.now()
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")) + ".yunx"
+
     fun accounts(): JSONArray = JSONArray(buildList {
         SharePlatform.entries.map { p ->
             JSONObject().put("platform", p.name).put("configured", credentials.credential(p.name).isNotBlank())
@@ -72,7 +94,7 @@ class ServerService(
                 .put("authType", if (p == SharePlatform.XUNLEI) credentials.get(p.name).optString("authType") else "")
                 .put("profile", profiles[p.name] ?: JSONObject.NULL)
         }.forEach { add(it) }
-        video.platforms.forEach { (key, parser) ->
+        video.configurable.forEach { (key, parser) ->
             add(
                 JSONObject().put("platform", key).put("configured", credentials.credential(key).isNotBlank())
                     .put("cloudSupported", false).put("authType", "")

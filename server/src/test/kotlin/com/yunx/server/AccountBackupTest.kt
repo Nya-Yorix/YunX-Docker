@@ -46,4 +46,26 @@ class AccountBackupTest {
                 .put(JSONObject().put("platform", "ilanzou").put("appToken", "missing-uuid")))
         assertFailsWith<IllegalArgumentException> { AccountBackup.decode(AuthCrypto.encrypt(invalid.toString(), password), password) }
     }
+    @Test fun videoPlatformsRoundTripWithDesktopPrefix() {
+        val directory = Files.createTempDirectory("yunx-backup-video-test").toFile()
+        try {
+            val source = Credentials(directory.resolve("source.enc"))
+            source.save("VIDEO_BILIBILI", JSONObject().put("cookie", "bili-cookie"))
+            source.save("VIDEO_XHS", JSONObject().put("cookie", "xhs-cookie"))
+            val archive = AccountBackup.export(source, password, setOf("VIDEO_BILIBILI", "VIDEO_XHS", "VIDEO_PIXIV"))
+            val plain = JSONObject(AuthCrypto.decrypt(archive, password))
+            val platforms = (0 until plain.getJSONArray("accounts").length())
+                .map { plain.getJSONArray("accounts").getJSONObject(it).getString("platform") }
+            assertEquals(setOf("video:BILIBILI", "video:XHS"), platforms.toSet())
+            // 未知视频平台按桌面版语义跳过；仅恢复认识的平台
+            val desktopArchive = JSONObject().put("app", "yunx_auth_backup").put("version", 1)
+                .put("accounts", JSONArray()
+                    .put(JSONObject().put("platform", "video:BILIBILI").put("cookie", "desktop-bili"))
+                    .put(JSONObject().put("platform", "video:DOUYIN").put("cookie", "desktop-douyin")))
+            val decoded = AccountBackup.decode(
+                AuthCrypto.encrypt(desktopArchive.toString(), password), password, setOf("VIDEO_BILIBILI", "VIDEO_XHS"))
+            assertEquals("desktop-bili", decoded.getValue("VIDEO_BILIBILI").getString("cookie"))
+            assertFalse(decoded.containsKey("VIDEO_DOUYIN"))
+        } finally { directory.deleteRecursively() }
+    }
 }

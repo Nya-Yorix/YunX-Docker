@@ -156,7 +156,11 @@ function accountFields() {
 }
 function openAccount(platform = "") {
   $("account-form").reset();
-  const available = Object.keys(names).filter(p => platform ? p === platform : !accountStates.find(a => a.platform === p)?.configured);
+  const available = Object.keys(names).filter(p => {
+    if (platform) return p === platform;
+    const state = accountStates.find(a => a.platform === p);
+    return !state?.configured && state?.configurable !== false;
+  });
   if (!available.length) { notice("所有支持的平台均已配置"); return; }
   $("account-platform").replaceChildren(...available.map(p => { const option = el("option","",names[p]); option.value = p; return option; }));
   $("account-title").textContent = platform ? "更新 "+names[platform]+" 凭证" : "添加网盘账号";
@@ -576,6 +580,31 @@ $("settings-form").addEventListener("submit",event => {
     await api("settings",{threads:Number($("setting-threads").value),concurrency:Number($("setting-concurrency").value),speedLimit:Math.round(Number($("setting-speed").value)*1048576)});
     notice("下载设置已保存",false,"settings-status");
   },"settings-status");
+});
+// ---- 账号备份（与桌面版 .yunx 格式互通）----
+$("backup-export-form").addEventListener("submit",event => {
+  event.preventDefault(); busy(event.submitter,async () => {
+    const result = await api("backup/export",{password:$("backup-export-password").value});
+    const blob = new Blob([result.content],{type:"application/octet-stream"});
+    const url = URL.createObjectURL(blob);
+    const anchor = el("a"); anchor.href = url; anchor.download = result.filename;
+    document.body.append(anchor); anchor.click(); anchor.remove();
+    URL.revokeObjectURL(url);
+    $("backup-export-password").value = "";
+    notice("备份已导出："+result.filename+"，请妥善保管文件与口令",false,"backup-status");
+  },"backup-status");
+});
+$("backup-import-form").addEventListener("submit",event => {
+  event.preventDefault(); busy(event.submitter,async () => {
+    const file = $("backup-file").files[0];
+    if (!file) throw new Error("请选择备份文件");
+    if (file.size > 2 * 1024 * 1024) throw new Error("备份文件过大（上限 2MB）");
+    const result = await api("backup/import",{content:await file.text(),password:$("backup-import-password").value});
+    $("backup-import-form").reset();
+    await loadAccounts();
+    notice("已恢复 "+result.imported+" 项凭证，可在账号页查看",false,"backup-status");
+    refreshProfiles();
+  },"backup-status");
 });
 $("password-form").addEventListener("submit",event => {
   event.preventDefault(); busy(event.submitter,async () => {

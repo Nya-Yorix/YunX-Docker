@@ -123,8 +123,11 @@ class WebServer(
             json(e, 415, JSONObject().put("error", "需要 JSON 请求"))
             return
         }
-        val bytes = e.requestBody.readNBytes(262145)
-        if (bytes.size > 262144) throw BodyTooLarge()
+        // 备份导入要装下完整加密备份（AccountBackup.decode 上限 2MB，JSON 转义留余量）；
+        // 其余接口维持 256KB 防滥用上限。
+        val maxBody = if (path == "/api/backup/import") 4 * 1024 * 1024 else 262144
+        val bytes = e.requestBody.readNBytes(maxBody + 1)
+        if (bytes.size > maxBody) throw BodyTooLarge()
         val body = JSONObject(String(bytes, Charsets.UTF_8))
         if (path == "/api/auth/login") {
             val token = if (body.optString("username") == username)
@@ -157,6 +160,8 @@ class WebServer(
                 "/api/cloud/download" -> service.cloudDownload(body)
                 "/api/video" -> service.video(body)
                 "/api/video/download" -> service.videoDownload(body)
+                "/api/backup/export" -> service.backupExport(body)
+                "/api/backup/import" -> service.backupImport(body)
                 "/api/settings" -> service.saveSettings(body)
                 "/api/library" -> service.libraryAction(body)
                 else -> { json(e, 404, JSONObject().put("error", "接口不存在")); return@runBlocking null }

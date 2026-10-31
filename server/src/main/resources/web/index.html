@@ -85,6 +85,24 @@
           <label for="setting-speed">总限速 · MiB/s，0 为不限速</label><input id="setting-speed" type="number" min="0" max="953674" step="0.01" required>
           <p id="settings-status" class="inline-status" role="status"></p><button class="secondary" type="submit"><i data-lucide="save"></i>保存设置</button>
         </form></div>
+        <div class="settings-section"><div><h2>账号备份</h2><span class="metadata">CREDENTIAL BACKUP</span></div>
+          <p class="metadata">把已配置的平台凭证导出为口令加密的备份文件（与桌面版 .yunx 格式通用），或从备份文件恢复。口令不存储，丢失后备份无法解密。</p>
+          <div class="backup-grid">
+            <form id="backup-export-form">
+              <label for="backup-export-password">备份口令 · 至少 8 位</label>
+              <div class="password-field"><input id="backup-export-password" type="password" required minlength="8" maxlength="256" autocomplete="new-password"><button class="icon-button reveal" type="button" data-input="backup-export-password" aria-label="显示备份口令" title="显示备份口令"><i data-lucide="eye"></i></button></div>
+              <button class="secondary" type="submit"><i data-lucide="download"></i>导出备份文件</button>
+            </form>
+            <form id="backup-import-form">
+              <label for="backup-file">备份文件 · .yunx 或明文 .json</label>
+              <input id="backup-file" type="file" accept=".yunx,.json,.txt" required>
+              <label for="backup-import-password">备份口令</label>
+              <input id="backup-import-password" type="password" required autocomplete="off">
+              <button class="secondary" type="submit"><i data-lucide="upload"></i>导入并恢复</button>
+            </form>
+          </div>
+          <p id="backup-status" class="inline-status" role="status"></p>
+        </div>
         <div class="settings-section"><div><h2>登录与安全</h2><span class="metadata">AUTHENTICATION</span></div><form id="password-form">
           <label for="current-password">当前密码</label><input id="current-password" type="password" autocomplete="current-password" required maxlength="256">
           <label for="new-password">新密码</label><div class="password-field"><input id="new-password" type="password" autocomplete="new-password" required minlength="12" maxlength="256"><button class="icon-button reveal" type="button" data-input="new-password" aria-label="显示新密码" title="显示新密码"><i data-lucide="eye"></i></button></div>
