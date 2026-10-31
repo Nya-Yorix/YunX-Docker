@@ -104,6 +104,19 @@ form>button{margin-top:16px}
 #backup-dialog form{display:flex;flex-direction:column;gap:10px}
 #backup-dialog form .primary{margin-top:8px}
 #backup-dialog form[hidden]{display:none}
+.dropzone{display:flex;align-items:center;justify-content:center;min-height:128px;padding:20px;border:2px dashed var(--visible);border-radius:10px;cursor:pointer;text-align:center;transition:border-color .15s ease,background .15s ease;outline:none}
+.dropzone:hover,.dropzone:focus-visible{border-color:var(--display)}
+.dropzone.dragover{border-color:var(--display);border-style:solid;background:color-mix(in srgb,var(--display) 12%,transparent)}
+.dropzone-empty,.dropzone-file{display:flex;align-items:center;gap:12px}
+.dropzone-empty{flex-direction:column;gap:6px;color:var(--secondary)}
+.dropzone-empty svg,.dropzone-file>svg{width:28px;height:28px}
+.dropzone.dragover .dropzone-empty svg{color:var(--display)}
+.dropzone-empty span{font-size:14px;color:var(--text)}
+.dropzone-empty small,.dropzone-file-info small{font-size:12px;color:var(--secondary)}
+.dropzone-file{flex:1;justify-content:flex-start;text-align:left}
+.dropzone-file-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.dropzone-file-info strong{font-size:13px;font-weight:600;overflow-wrap:anywhere}
+.dropzone-empty[hidden],.dropzone-file[hidden]{display:none}
 .video-card{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:20px;margin:16px 0;display:flex;flex-direction:column;gap:12px}
 .video-card .browser-title{margin:0}
 .video-media{display:flex;flex-direction:column}

@@ -125,8 +125,22 @@
     </form>
     <form id="backup-import-form" hidden>
       <p class="backup-note">从 <span class="mono">.yunx</span>（加密）或 <span class="mono">.json</span>（明文）备份恢复；备份内的同名平台凭证会<b>覆盖</b>当前值，其余平台不受影响。</p>
-      <label for="backup-file">备份文件</label>
-      <input id="backup-file" type="file" accept=".yunx,.json,.txt" required>
+      <input id="backup-file" type="file" accept=".yunx,.json,.txt" hidden>
+      <div id="backup-dropzone" class="dropzone" role="button" tabindex="0" aria-label="点击选择或拖拽备份文件，支持 .yunx 与 .json">
+        <div class="dropzone-empty">
+          <i data-lucide="upload-cloud"></i>
+          <span>点击选择或拖拽文件到此处</span>
+          <small>支持 .yunx（加密）/ .json（明文）· ≤ 2MB</small>
+        </div>
+        <div class="dropzone-file" hidden>
+          <i data-lucide="file-check-2"></i>
+          <div class="dropzone-file-info">
+            <strong id="backup-file-name"></strong>
+            <small id="backup-file-size"></small>
+          </div>
+          <button id="backup-file-clear" class="icon-button" type="button" title="移除文件" aria-label="移除文件"><i data-lucide="x"></i></button>
+        </div>
+      </div>
       <label for="backup-import-password">备份口令</label>
       <input id="backup-import-password" type="password" required autocomplete="off">
       <p id="backup-import-status" class="inline-status" role="status"></p>

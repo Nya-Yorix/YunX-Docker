@@ -582,6 +582,7 @@ $("settings-form").addEventListener("submit",event => {
   },"settings-status");
 });
 // ---- 账号备份（与桌面版 .yunx 格式互通）----
+let backupFile = null;
 function switchBackupTab(tab) {
   $("backup-tabs").querySelectorAll("button").forEach(b => {
     const active = b.dataset.backup === tab;
@@ -591,8 +592,45 @@ function switchBackupTab(tab) {
   $("backup-import-form").hidden = tab !== "import";
   icons();
 }
+function acceptBackupFile(file) {
+  if (!file) return;
+  if (!/\.(yunx|json|txt)$/i.test(file.name)) { notice("仅支持 .yunx / .json 备份文件",true,"backup-import-status"); return; }
+  if (file.size > 2 * 1024 * 1024) { notice("备份文件过大（上限 2MB）",true,"backup-import-status"); return; }
+  backupFile = file;
+  $("backup-file-name").textContent = file.name;
+  $("backup-file-size").textContent = size(file.size);
+  $("backup-dropzone").querySelector(".dropzone-empty").hidden = true;
+  $("backup-dropzone").querySelector(".dropzone-file").hidden = false;
+  $("backup-import-status").textContent = "";
+  icons();
+}
+function clearBackupFile() {
+  backupFile = null;
+  $("backup-file").value = "";
+  $("backup-dropzone").querySelector(".dropzone-empty").hidden = false;
+  $("backup-dropzone").querySelector(".dropzone-file").hidden = true;
+}
+const backupDropzone = $("backup-dropzone");
+backupDropzone.addEventListener("click",event => {
+  if (event.target.closest("#backup-file-clear")) return;
+  $("backup-file").click();
+});
+backupDropzone.addEventListener("keydown",event => {
+  if (event.key === "Enter" || event.key === " ") { event.preventDefault(); $("backup-file").click(); }
+});
+["dragenter","dragover"].forEach(type => backupDropzone.addEventListener(type,event => {
+  event.preventDefault(); backupDropzone.classList.add("dragover");
+}));
+["dragleave","dragend","drop"].forEach(type => backupDropzone.addEventListener(type,() => backupDropzone.classList.remove("dragover")));
+backupDropzone.addEventListener("drop",event => {
+  event.preventDefault();
+  acceptBackupFile(event.dataTransfer?.files?.[0]);
+});
+$("backup-file").addEventListener("change",() => acceptBackupFile($("backup-file").files[0]));
+$("backup-file-clear").addEventListener("click",event => { event.stopPropagation(); clearBackupFile(); });
 $("backup-open").addEventListener("click",() => {
   $("backup-export-form").reset(); $("backup-import-form").reset();
+  clearBackupFile();
   $("backup-status").textContent = ""; $("backup-import-status").textContent = "";
   switchBackupTab("export"); $("backup-dialog").showModal(); icons();
 });
@@ -613,11 +651,10 @@ $("backup-export-form").addEventListener("submit",event => {
 });
 $("backup-import-form").addEventListener("submit",event => {
   event.preventDefault(); busy(event.submitter,async () => {
-    const file = $("backup-file").files[0];
-    if (!file) throw new Error("请选择备份文件");
-    if (file.size > 2 * 1024 * 1024) throw new Error("备份文件过大（上限 2MB）");
-    const result = await api("backup/import",{content:await file.text(),password:$("backup-import-password").value});
+    if (!backupFile) throw new Error("请选择备份文件");
+    const result = await api("backup/import",{content:await backupFile.text(),password:$("backup-import-password").value});
     $("backup-import-form").reset();
+    clearBackupFile();
     $("backup-dialog").close();
     await loadAccounts();
     notice("已恢复 "+result.imported+" 项凭证，可在账号页查看");
