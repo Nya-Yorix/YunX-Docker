@@ -6,6 +6,7 @@ import com.yunx.app.AppContext
 import com.yunx.app.data.db.AppDatabase
 import com.yunx.app.data.download.ChunkDownloader
 import com.yunx.app.data.download.DownloadManager
+import com.yunx.app.data.network.CredentialExpiredException
 import com.yunx.app.data.network.HttpClients
 import com.yunx.app.data.prefs.SettingsRepository
 import com.yunx.app.util.LogRedactor
@@ -41,7 +42,11 @@ class WebServer(
                 try { handle(exchange) }
                 catch (_: BodyTooLarge) { json(exchange, 413, JSONObject().put("error", "请求内容过大")) }
                 catch (e: Exception) {
-                    json(exchange, 400, JSONObject().put("error", LogRedactor.line(e.message ?: "请求失败").take(1000)))
+                    // 凭证失效类错误带 kind=auth：前端账号卡容量区红字「登录失败」，
+                    // 其余（网络/限流/上游抖动）维持普通错误样式。
+                    val payload = JSONObject().put("error", LogRedactor.line(e.message ?: "请求失败").take(1000))
+                    if (e is CredentialExpiredException) payload.put("kind", "auth")
+                    json(exchange, 400, payload)
                 }
             } finally { exchange.close() }
         }

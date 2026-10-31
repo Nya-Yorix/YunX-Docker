@@ -240,29 +240,41 @@ class ServerService(
         require(c.isNotBlank()) { "请先添加网盘账号" }
         val account = credentials.get(p.name)
         var name: String? = null
-        val quota: QuotaInfo? = when (p) {
-            SharePlatform.QUARK -> quark().let { name = it.fetchNickname(c); it.getQuota(credentials.credential(p.name)) }
-            SharePlatform.UC -> uc().let { name = it.fetchNickname(c); it.getQuota(credentials.credential(p.name)) }
-            SharePlatform.BAIDU -> BaiduApi().let { name = it.fetchNickname(c); it.getQuota(c) }
-            SharePlatform.PAN115 -> Pan115Api().let { name = it.fetchNickname(c); it.getQuota(c) }
-            SharePlatform.PAN123 -> Pan123Api().let { name = it.fetchNickname(c); it.getQuota(c) }
-            SharePlatform.C139 -> C139Api().getQuota(c)
-            SharePlatform.XUNLEI -> XunleiApi().getQuota(c, account.optString("deviceId"), account.optString("captchaToken"))
-            SharePlatform.GUANGYA -> GuangYaApi().getQuota(c, GuangYaDevice(account.optString("deviceId"), account.optString("deviceSign")))
-            SharePlatform.LANZOU -> {
-                name = LanzouApi().fetchLoginParams(c)?.let { "蓝奏云账号" }; null
-            }
-            SharePlatform.ILANZOU -> ILanzouApi().getQuota(c, account.getString("uuid"))
-            SharePlatform.GITHUB -> {
-                when (val check = github.validateToken(c)) {
-                    is TokenCheck.Valid -> name = check.login
-                    TokenCheck.Invalid -> error("凭证无效")
-                    TokenCheck.Unknown -> error("暂时无法验证")
+        // 校验型调用：CredentialCheck.Invalid（凭证失效）→ CredentialExpiredException（HTTP 错误带 kind=auth，
+        // 前端红字「登录失败」）；Unknown（网络/限流/上游抖动）→ 普通错误（前端「容量暂不可用」）。
+        val check: CredentialCheck = when (p) {
+            SharePlatform.QUARK -> quark().let { api -> name = runCatching { api.fetchNickname(c) }.getOrNull(); api.quotaCheck(c) }
+            SharePlatform.UC -> uc().let { api -> name = runCatching { api.fetchNickname(c) }.getOrNull(); api.quotaCheck(c) }
+            SharePlatform.BAIDU -> BaiduApi().let { api -> name = runCatching { api.fetchNickname(c) }.getOrNull(); api.quotaCheck(c) }
+            SharePlatform.PAN115 -> Pan115Api().let { api -> name = runCatching { api.fetchNickname(c) }.getOrNull(); api.quotaCheck(c) }
+            SharePlatform.PAN123 -> Pan123Api().let { api -> name = runCatching { api.fetchNickname(c) }.getOrNull(); api.quotaCheck(c) }
+            SharePlatform.C139 -> C139Api().quotaCheck(c)
+            SharePlatform.XUNLEI -> {
+                val api = XunleiApi().apply {
+                    refreshTokenProvider = { deviceId ->
+                        runCatching {
+                            refreshToken(account.optString("refreshToken"), deviceId, account.optString("authType"))
+                        }.getOrNull()
+                    }
                 }
-                null
+                api.quotaCheck(account.optString("accessToken"), account.optString("deviceId"), account.optString("captchaToken"))
             }
-            else -> null
+            SharePlatform.GUANGYA -> GuangYaApi().quotaCheck(c, GuangYaDevice(account.optString("deviceId"), account.optString("deviceSign")))
+            SharePlatform.LANZOU -> LanzouApi().quotaCheck(c)
+            SharePlatform.ILANZOU -> ILanzouApi().quotaCheck(c, account.getString("uuid"))
+            SharePlatform.GITHUB -> {
+                when (val token = github.validateToken(c)) {
+                    is TokenCheck.Valid -> { name = token.login; CredentialCheck.Valid(token.login, null) }
+                    TokenCheck.Invalid -> CredentialCheck.Invalid("凭证无效")
+                    TokenCheck.Unknown -> CredentialCheck.Unknown("暂时无法验证")
+                }
+            }
+            else -> error("暂不支持")
         }
+        if (check is CredentialCheck.Invalid) throw CredentialExpiredException(check.message)
+        // Unknown 保留上游细节（卡片显示归纳文案,轻提示里可见真实原因;也供假 token 探测提取码值）
+        if (check is CredentialCheck.Unknown) throw IllegalStateException("暂时无法验证，请稍后重试（${check.message.take(160)}）")
+        val quota: QuotaInfo? = (check as? CredentialCheck.Valid)?.quota
         val result = JSONObject().put("nickname", name ?: account.optString("label"))
             .put("checkedAt", System.currentTimeMillis()).put("available", quota != null || name != null)
             .put("quota", quota?.let { JSONObject().put("used", it.used).put("total", it.total).put("trash", it.usedInTrash) } ?: JSONObject.NULL)
