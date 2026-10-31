@@ -8,6 +8,13 @@ let libraryData = {bookmarks:[],history:[]};
 let settingsGeneration = 0;
 const profilePending = new Set();
 const browsers = {};
+// ---- 进场动画防重放:任务行按 id 记忆(轮询不重放),账号卡按标志(静默刷新不重放),文件行按调用意图 ----
+let seenTaskIds = new Set(), accountsAnimateNext = false;
+function stagger(node, index, cap) {
+  if (index >= cap) return;
+  node.style.setProperty("--stagger-i", index);
+  node.classList.add("enter");
+}
 function icons() { lucide.createIcons(); }
 function el(tag, cls, text) {
   const node = document.createElement(tag);
@@ -40,7 +47,9 @@ async function api(path, body) {
   const data = await response.json();
   if (!response.ok) {
     if (response.status === 401 && path !== "auth/login") showLogin("登录已过期，请重新登录");
-    throw new Error(data.error || "请求失败");
+    const error = new Error(data.error || "请求失败");
+    if (data.kind) error.kind = data.kind;
+    throw error;
   }
   return data;
 }
@@ -99,9 +108,9 @@ async function view(name) {
   });
   $("page-label").textContent = "WORKSPACE / " + name.toUpperCase();
   $("notice").hidden = true;
-  if (name === "tasks") await refreshTasks();
+  if (name === "tasks") { seenTaskIds.clear(); await refreshTasks(); }
   if (name === "resolve") await loadLibrary();
-  if (name === "accounts") { await loadAccounts(); refreshProfiles(); }
+  if (name === "accounts") { accountsAnimateNext = true; await loadAccounts(); refreshProfiles(); }
   if (name === "cloud" && !browsers.cloud && cloudPlatform) await loadCloud();
   if (name === "settings") {
     const generation = ++settingsGeneration;
@@ -176,6 +185,7 @@ $("account-form").addEventListener("submit", event => {
     const credentials = Object.fromEntries([...$("credential-fields").querySelectorAll("input,select")].map(input => [input.name,input.value.trim()]));
     await api("accounts", { platform,credentials });
     $("account-form").reset(); $("account-dialog").close(); delete browsers.cloud;
+    accountsAnimateNext = true;
     await loadAccounts(); notice("凭证已保存，尚未验证"); refreshProfiles();
   }, "account-status");
 });
@@ -186,12 +196,15 @@ async function loadAccounts() {
 }
 function renderAccounts() {
   const configured = accountStates.filter(a => a.configured), available = accountStates.filter(a => !a.configured);
+  const animate = accountsAnimateNext; accountsAnimateNext = false;
   $("account-count").textContent = configured.length + " ACCOUNTS";
   $("available-count").textContent = available.length;
   $("account-list").replaceChildren();
   if (!configured.length) $("account-list").append(el("div","empty","尚未添加账号"));
+  let cardIndex = 0;
   for (const account of configured) {
     const p = account.platform, card = el("article","account-card"); card.dataset.platform = p;
+    if (animate) stagger(card, cardIndex++, 10);
     const head = el("div","account-head"), info = el("div");
     info.append(el("h2","",names[p]),el("span","metadata", account.profile?.nickname || "已配置凭证"));
     head.append(icon("cloud"),info); card.append(head);
@@ -207,7 +220,7 @@ function renderAccounts() {
       card.append(meter,meta);
     } else if (!noQuota) {
       if (profilePending.has(p)) card.append(el("div","capacity-na","读取容量中…"));
-      else if (account.profile?.error) card.append(el("div","capacity-na capacity-error","登录失败"));
+      else if (account.profile?.error) card.append(el("div","capacity-na"+(account.profile.auth ? " capacity-error" : ""),account.profile.auth ? "登录失败" : "容量暂不可用"));
       else if (account.profile) card.append(el("div","capacity-na","容量暂不可用"));
       else card.append(el("div","capacity-na","容量尚未读取"));
     }
@@ -230,7 +243,7 @@ async function refreshProfile(platform) {
     if (account?.configured) account.profile = profile;
   } catch (error) {
     const account = accountStates.find(a => a.platform === platform);
-    if (account) account.profile = {error:error.message};
+    if (account) account.profile = {error:error.message, auth:error.kind === "auth"};
     if (loggedIn && activeView === "accounts") notice(names[platform]+"："+error.message,true);
   } finally { profilePending.delete(platform); renderAccounts(); }
 }
@@ -243,7 +256,9 @@ async function refreshProfiles() {
 $("confirm-cancel").addEventListener("click", () => $("confirm-dialog").close());
 $("confirm-remove").addEventListener("click", () => busy($("confirm-remove"),async () => {
   await api("accounts",{platform:pendingRemoval,credentials:{}});
-  $("confirm-dialog").close(); delete browsers.cloud; await loadAccounts(); notice("账号已移除");
+  $("confirm-dialog").close(); delete browsers.cloud;
+  accountsAnimateNext = true;
+  await loadAccounts(); notice("账号已移除");
 }));
 let cloudPlatform = "";
 let cloudGeneration = 0;
@@ -281,8 +296,10 @@ async function resolve(link,password = "") {
 async function loadLibrary() { libraryData = await api("library"); renderLibrary(); }
 function renderLibrary() {
   $("library-list").replaceChildren();
+  let rowIndex = 0;
   for (const item of libraryData[libraryTab]) {
     const row = el("div","saved-link");
+    stagger(row, rowIndex++, 12);
     row.append(command(item.title || item.link,"link",async () => {
       $("link").value = item.link; $("password").value = item.password;
       await resolve(item.link,item.password);
@@ -335,7 +352,7 @@ function renderVideo(result) {
     root.replaceChildren();
     await view("tasks"); notice("已加入下载");
   },"primary"));
-  card.append(list,actions); root.append(card); icons();
+  card.append(list,actions); root.append(card); stagger(card, 0, 1); icons();
 }
 function makeBrowser(kind,result) {
   const state = { kind, result, files:result.files || result.assets || result.repositories || [],
@@ -382,7 +399,7 @@ function buildBrowser(state) {
   for (const [name,label,glyph] of [["list","列表视图","list"],["grid","网格视图","layout-grid"]]) {
     const button = command(label,glyph,() => {
       state.layout = name; layout.querySelectorAll("button").forEach(b => { b.classList.toggle("active",b.dataset.layout === name); b.setAttribute("aria-pressed",String(b.dataset.layout === name)); });
-      renderFiles(state);
+      renderFiles(state, true);
     });
     button.dataset.layout = name; button.classList.toggle("active",state.layout === name); button.setAttribute("aria-pressed",String(state.layout === name)); layout.append(button);
   }
@@ -431,7 +448,7 @@ function buildBrowser(state) {
     buildBrowser(state);
   },"secondary load-more"));
   if (state.result.limited) root.append(el("p","metadata","当前接口仅返回首批文件。"));
-  renderFiles(state);
+  renderFiles(state, true);
 }
 function visibleFiles(state) {
   return state.files.filter(file => file.name.toLocaleLowerCase().includes(state.query.toLocaleLowerCase())).sort((a,b) =>
@@ -444,7 +461,7 @@ function updateSelection(state) {
   for (const button of state.mutationButtons || []) button.disabled = button.dataset.action === "create" ? false :
     button.dataset.action === "rename" ? state.selected.size !== 1 : !state.selected.size;
 }
-function renderFiles(state) {
+function renderFiles(state, animate) {
   const files = visibleFiles(state);
   state.rows.replaceChildren(); state.rows.className = state.layout === "grid" ? "file-grid" : "file-list";
   updateSelection(state);
@@ -458,8 +475,10 @@ function renderFiles(state) {
     header.append(el("span"),el("span"),el("span","","名称"),el("span","file-size","大小"),el("span","file-time","修改时间"),el("span"));
     state.rows.append(header);
   }
+  let rowIndex = 0;
   for (const file of files) {
     const row = el("div","file-row"), check = el("input"); check.type = "checkbox";
+    if (animate) stagger(row, rowIndex++, 24);
     check.disabled = (!!file.directory && state.kind !== "cloud") || !!state.result.repositories; check.checked = state.selected.has(file.fid || file.url);
     check.setAttribute("aria-label","选择 "+file.name);
     check.addEventListener("change",() => {
@@ -678,6 +697,7 @@ $("backup-import-form").addEventListener("submit",event => {
     $("backup-import-form").reset();
     clearBackupFile();
     $("backup-dialog").close();
+    accountsAnimateNext = true;
     await loadAccounts();
     notice("已恢复 "+result.imported+" 项凭证，可在账号页查看");
     refreshProfiles();
