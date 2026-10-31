@@ -85,12 +85,7 @@ dependencies {
 }
 
 kotlin {
-    jvmToolchain(if (System.getProperty("os.name").lowercase().contains("mac")) 21 else 17)
-    compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-}
-java {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
+    jvmToolchain(17)
 }
 
 // ---- 版本号单一来源：仓库根目录 version.txt（jpackage / 便携包 / 安装包 / 应用内版本全部由它派生）----

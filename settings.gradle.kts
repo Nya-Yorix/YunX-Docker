@@ -21,4 +21,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "YunX-Desktop"
 include(":desktop")
-include(":macos")

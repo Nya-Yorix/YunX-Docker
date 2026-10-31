@@ -9,7 +9,7 @@ interface DownloadSystemEvents {
     object None : DownloadSystemEvents
 }
 
-/** Optional external engine; the local Mac edition only uses the built-in downloader. */
+/** Optional external engine; headless deployments only use the built-in downloader. */
 interface ExternalDownloadEngine {
     data class TaskView(val id: String, val status: String, val downloaded: Long, val total: Long, val speed: Long)
     data class TaskDetail(val name: String, val fileCount: Int, val folder: Boolean)
