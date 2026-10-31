@@ -96,6 +96,7 @@ GitHub CI 在 amd64、arm64 原生 runner 上分别构建、运行容器并验�
 | 迅雷 | Access Token、Refresh Token、Device ID、Captcha Token，选择 App 或网页通道 |
 | GitHub | 可选 Personal Access Token |
 | 蓝奏云、蓝奏优享 | 当前网页使用游客分享解析与下载 |
+| 哔哩哔哩、快手、微博、AcFun、小红书、Pixiv（视频，实验） | 手动粘贴 Cookie |
 
 凭证字段不会回显。「已保存凭证」仅表示已保存，不代表上游账号已验证；
 遇到登录过期时，重新填写凭证。夸克/UC 会回写 API 响应更新的 Cookie，迅雷使用 Refresh Token
@@ -104,6 +105,9 @@ GitHub CI 在 amd64、arm64 原生 runner 上分别构建、运行容器并验�
 
 支持逐文件下载、分享目录浏览、HTTP/HTTPS 直链下载，以及 GitHub 仓库 Releases、
 默认分支 ZIP 和账号仓库列表。GitHub 仓库链接中的 tree/blob 子路径当前按仓库入口处理。
+「分享解析」页支持视频/图文链接解析（实验）：哔哩哔哩、快手、微博、AcFun、小红书、Pixiv
+走服务端纯 HTTP 解析，抖音依赖内嵌浏览器仅桌面版可用；B 站 DASH 分轨自动合轨（纯 Java）。
+下载时可选任务级线程数覆盖（0 = 跟随全局设置）。
 个人网盘浏览与下载支持夸克、UC、百度、139、115、123、光鸭与迅雷；
 迅雷个人目录需 App 通道凭证，网页通道仍可用于既有分享解析流程。
 光鸭容量查询还需 Device ID 与 Device Sign；页面中可填写。
