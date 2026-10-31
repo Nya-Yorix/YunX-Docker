@@ -193,6 +193,6 @@ object DesktopMergeToolchain : com.yunx.app.data.download.MergeToolchain {
     override fun locateFfmpeg(): java.io.File? = FfplayManager.locateFfmpeg()
 
     override fun askEngineInstall() {
-        ask(Reason.MERGE)
+        EngineInstallPrompt.ask(EngineInstallPrompt.Reason.MERGE)
     }
 }
