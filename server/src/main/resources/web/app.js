@@ -204,7 +204,7 @@ function renderAccounts() {
   let cardIndex = 0;
   for (const account of configured) {
     const p = account.platform, card = el("article","account-card"); card.dataset.platform = p;
-    if (animate) stagger(card, cardIndex++, 10);
+    if (animate) stagger(card, cardIndex++, 16);
     const head = el("div","account-head"), info = el("div");
     info.append(el("h2","",names[p]),el("span","metadata", account.profile?.nickname || "已配置凭证"));
     head.append(icon("cloud"),info); card.append(head);
