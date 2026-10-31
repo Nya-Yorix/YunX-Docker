@@ -47,14 +47,8 @@ class ServerService(
     private val cloudSessions = ConcurrentHashMap<String, CloudSession>()
     private val profiles = ConcurrentHashMap<String, JSONObject>()
     private val revisions = ConcurrentHashMap<String, Long>()
-    private fun quark(): QuarkApi {
-        var expected = credentials.credential("QUARK")
-        return QuarkApi().apply { cookieSink = { merged, _ -> credentials.updateCookie("QUARK", expected, merged); expected = merged } }
-    }
-    private fun uc(): UCApi {
-        var expected = credentials.credential("UC")
-        return UCApi().apply { cookieSink = { merged, _ -> credentials.updateCookie("UC", expected, merged); expected = merged } }
-    }
+    /** 平台操作面注册表：accountInfo / cloudFiles / cloudDownload 的 per-platform 知识都收在 CloudDrives */
+    private val drives = CloudDrives(credentials)
     private val github = GitHubApi(tokenProvider = { credentials.get("GITHUB").optString("accessToken") })
     private val githubBrowser = GitHubBrowser(github)
     val video = VideoService(credentials)
@@ -266,38 +260,12 @@ class ServerService(
         val revision = revisions[p.name] ?: 0L
         require(c.isNotBlank()) { "请先添加网盘账号" }
         val account = credentials.get(p.name)
-        var name: String? = null
         // 校验型调用：CredentialCheck.Invalid（凭证失效）→ CredentialExpiredException（HTTP 错误带 kind=auth，
         // 前端红字「登录失败」）；Unknown（网络/限流/上游抖动）→ 普通错误（前端「容量暂不可用」）。
-        val check: CredentialCheck = when (p) {
-            SharePlatform.QUARK -> quark().let { api -> name = runCatching { api.fetchNickname(c) }.getOrNull(); api.quotaCheck(c) }
-            SharePlatform.UC -> uc().let { api -> name = runCatching { api.fetchNickname(c) }.getOrNull(); api.quotaCheck(c) }
-            SharePlatform.BAIDU -> BaiduApi().let { api -> name = runCatching { api.fetchNickname(c) }.getOrNull(); api.quotaCheck(c) }
-            SharePlatform.PAN115 -> Pan115Api().let { api -> name = runCatching { api.fetchNickname(c) }.getOrNull(); api.quotaCheck(c) }
-            SharePlatform.PAN123 -> Pan123Api().let { api -> name = runCatching { api.fetchNickname(c) }.getOrNull(); api.quotaCheck(c) }
-            SharePlatform.C139 -> C139Api().quotaCheck(c)
-            SharePlatform.XUNLEI -> {
-                val api = XunleiApi().apply {
-                    refreshTokenProvider = { deviceId ->
-                        runCatching {
-                            refreshToken(account.optString("refreshToken"), deviceId, account.optString("authType"))
-                        }.getOrNull()
-                    }
-                }
-                api.quotaCheck(account.optString("accessToken"), account.optString("deviceId"), account.optString("captchaToken"))
-            }
-            SharePlatform.GUANGYA -> GuangYaApi().quotaCheck(c, GuangYaDevice(account.optString("deviceId"), account.optString("deviceSign")))
-            SharePlatform.LANZOU -> LanzouApi().quotaCheck(c)
-            SharePlatform.ILANZOU -> ILanzouApi().quotaCheck(c, account.getString("uuid"))
-            SharePlatform.GITHUB -> {
-                when (val token = github.validateToken(c)) {
-                    is TokenCheck.Valid -> { name = token.login; CredentialCheck.Valid(token.login, null) }
-                    TokenCheck.Invalid -> CredentialCheck.Invalid("凭证无效")
-                    TokenCheck.Unknown -> CredentialCheck.Unknown("暂时无法验证")
-                }
-            }
-            else -> error("暂不支持")
-        }
+        // 各平台凭证字段读取（cookie / token 三元组 / GuangYaDevice / uuid）与校验签名差异收在 CloudDrives。
+        val checked = drives.forPlatform(p).credentialCheck()
+        val check: CredentialCheck = checked.check
+        val name: String? = checked.nickname
         if (check is CredentialCheck.Invalid) throw CredentialExpiredException(check.message)
         // Unknown 保留上游细节（卡片显示归纳文案,轻提示里可见真实原因;也供假 token 探测提取码值）
         if (check is CredentialCheck.Unknown) throw IllegalStateException("暂时无法验证，请稍后重试（${check.message.take(160)}）")
@@ -318,8 +286,8 @@ class ServerService(
         val c = credentials.credential(p.name)
         require(c.isNotBlank()) { "请先添加网盘账号" }
         require(p != SharePlatform.GITHUB) { "请使用 GitHub 仓库入口" }
-        // 根目录约定对齐桌面版：百度/139 用 "/"，迅雷用空串，蓝奏云用 "-1"，其余 "0"
-        val root = when (p) { SharePlatform.BAIDU, SharePlatform.C139 -> "/"; SharePlatform.XUNLEI -> ""; SharePlatform.LANZOU -> "-1"; else -> "0" }
+        // 根目录约定对齐桌面版：百度/139 用 "/"，迅雷用空串，蓝奏云用 "-1"，其余 "0"（收在 adapter 的 rootDir）
+        val root = drives.forPlatform(p).rootDir
         val session = if (existing.isBlank()) CloudSession(p, revisions[p.name] ?: 0L).apply { dirs.add(root) }
             else cloudSessions[existing] ?: error("目录会话已失效")
         return session.mutex.withLock {
@@ -328,40 +296,11 @@ class ServerService(
             require(dir in session.dirs) { "请从已列出的文件夹进入" }
             val page = body.optInt("page", 1)
             require(page in 1..10000) { "页码无效" }
-            val a = credentials.get(p.name)
-            var more = false
-            var cursor = ""
-            val files: List<ShareFile> = when (p) {
-                SharePlatform.QUARK -> quark().listCloudFiles(dir, c, page, 100)?.also { more = it.size == 100 } ?: error("无法获取文件，请检查凭证")
-                SharePlatform.UC -> uc().listCloudFiles(dir, c, page, 100)?.also { more = it.size == 100 } ?: error("无法获取文件，请检查凭证")
-                SharePlatform.BAIDU -> BaiduApi().listCloudFiles(dir, c)
-                SharePlatform.PAN115 -> Pan115Api().listFiles(dir, c, (page - 1) * 100, 100).let { more = page * 100 < it.total; it.files }
-                SharePlatform.PAN123 -> Pan123Api().listCloudFiles(dir, c, body.optString("cursor").ifBlank { "0" }).let {
-                    cursor = it.second.orEmpty(); more = cursor.isNotBlank(); it.first
-                }
-                SharePlatform.C139 -> C139Api().listCloudFiles(dir, c, body.optString("cursor").ifBlank { null }).let {
-                    more = it.second != null; cursor = it.second.orEmpty(); it.first
-                }
-                SharePlatform.GUANGYA -> GuangYaApi().apply { deviceIdProvider = { a.optString("deviceId") } }.listCloudFiles(c, dir)
-                SharePlatform.XUNLEI -> {
-                    // 网页通道 token 实测同样可列个人目录（quota/列表同走 drive API）；
-                    // 401 自动刷新一次（App 通道用 refreshToken，网页通道刷新失败再报登录过期）
-                    XunleiApi().apply {
-                        refreshTokenProvider = { deviceId ->
-                            runCatching {
-                                refreshToken(a.optString("refreshToken"), deviceId, a.optString("authType"))
-                            }.getOrNull()
-                        }
-                    }.getFiles(dir, c, a.optString("deviceId"), a.optString("captchaToken"))
-                        ?: error("无法获取迅雷目录")
-                }
-                SharePlatform.LANZOU -> LanzouApi().let { api ->
-                    val params = api.fetchLoginParams(c) ?: error("凭证无效")
-                    api.listCloudFiles(c, params.uid, params.vei, dir)
-                }
-                SharePlatform.ILANZOU -> ILanzouApi().listFiles(c, a.getString("uuid"), dir)
-                else -> error("暂不支持")
-            }
+            // 各平台分页形态（页码/偏移/游标/全量）与凭证字段读取收在 adapter 的 listCloudDir
+            val pageResult = drives.forPlatform(p).listCloudDir(dir, page, body.optString("cursor").ifBlank { null })
+            val files: List<ShareFile> = pageResult.files
+            val more = pageResult.hasMore
+            val cursor = pageResult.cursor
             require(session.revision == (revisions[p.name] ?: 0L)) { "账号配置已更新，请重试" }
             if (page == 1) session.listed[dir] = mutableSetOf()
             files.forEach {
@@ -376,7 +315,7 @@ class ServerService(
                 .put("files", JSONArray(files.map { fileJson(it).put("directoryId", CloudMutationPolicy.directoryId(p, it)) }))
                 .put("directories", cloudDirectories(session))
                 .put("hasMore", more).put("cursor", cursor)
-                .put("limited", p == SharePlatform.XUNLEI && files.size >= 500)
+                .put("limited", pageResult.limited)
         }
     }
     suspend fun cloudAction(body: JSONObject): JSONObject {
@@ -386,7 +325,7 @@ class ServerService(
             require(session.revision == (revisions[session.platform.name] ?: 0L)) { "账号配置已更新，请重新打开网盘" }
             val listed = session.listed[body.getString("directory")].orEmpty()
             val operation = CloudMutationPolicy.validate(body, session.platform, session.files, session.parents, session.dirs, listed)
-            val result = CloudMutationExecutor(::quark, ::uc).execute(session.platform, credentials.get(session.platform.name), operation) {
+            val result = CloudMutationExecutor(drives::quark, drives::uc).execute(session.platform, credentials.get(session.platform.name), operation) {
                 require(session.revision == (revisions[session.platform.name] ?: 0L)) { "账号配置已更新，操作停止" }
             }
             require(session.revision == (revisions[session.platform.name] ?: 0L)) { "账号已更新；操作结果请刷新确认" }
@@ -434,27 +373,8 @@ class ServerService(
             require(s.revision == (revisions[s.platform.name] ?: 0L)) { "账号配置已更新，请重新打开网盘" }
             val f = s.files[body.getString("fid")] ?: error("请从已列出的文件中选择")
             require(!f.isdir) { "请进入文件夹选择文件" }
-            val a = credentials.get(s.platform.name)
-            val link = when (s.platform) {
-                SharePlatform.QUARK -> quark().getDownloadLink(f.fid, c)
-                SharePlatform.UC -> uc().cloudGetDownloadLink(f.fid, c)
-                SharePlatform.BAIDU -> DownloadLink(f.fid, f.fname, BaiduApi().locateDownload(f.fidToken, c), f.fsize)
-                SharePlatform.PAN115 -> Pan115Api().getDownloadLink(f, c)
-                SharePlatform.PAN123 -> Pan123Api().getDownloadLink(f, c)
-                SharePlatform.C139 -> C139Api().getDownloadUrl(f.fid, c)
-                SharePlatform.GUANGYA -> GuangYaApi().apply { deviceIdProvider = { a.optString("deviceId") } }.getDownloadLink(c, f)
-                SharePlatform.XUNLEI -> XunleiApi().getFileDetail(f.fid, c, a.optString("deviceId"), a.optString("captchaToken"))
-                SharePlatform.LANZOU -> LanzouApi().let { api ->
-                    val params = api.fetchLoginParams(c) ?: error("凭证无效")
-                    api.getPersonalDownloadLink(c, params.uid, params.vei, f.fid.removePrefix(LanzouConstants.FILE_PREFIX), f.fname)
-                }
-                SharePlatform.ILANZOU -> ILanzouApi().let { api ->
-                    val uuid = a.getString("uuid")
-                    val info = api.fetchAccountInfo(c, uuid) ?: error("暂时无法验证")
-                    api.getDownloadLink(c, uuid, f.fid.removePrefix(ILanzouConstants.FILE_PREFIX), info.userId)
-                }
-                else -> null
-            } ?: error("未取得下载地址，请检查账号权限")
+            val link = drives.forPlatform(s.platform).personalDownloadLink(f)
+                ?: error("未取得下载地址，请检查账号权限")
             require(s.revision == (revisions[s.platform.name] ?: 0L)) { "账号配置已更新，请重新打开网盘" }
             JSONObject().put("id", downloads.enqueue(link.downloadUrl, f.fname, downloadHeaders(s.platform, link, credentials.credential(s.platform.name)),
                 link.size, s.platform.name.lowercase(), threads = video.threadsOf(body)))
@@ -464,8 +384,8 @@ class ServerService(
     private fun repo(p: SharePlatform): ShareResolveRepository {
         fun credential() = credentials.credential(p.name).takeIf { it.isNotBlank() }
         return when (p) {
-            SharePlatform.QUARK -> QuarkResolveRepository(quark())
-            SharePlatform.UC -> UCResolveRepository(uc())
+            SharePlatform.QUARK -> QuarkResolveRepository(drives.quark())
+            SharePlatform.UC -> UCResolveRepository(drives.uc())
             SharePlatform.BAIDU -> BaiduResolveRepository(BaiduApi())
             SharePlatform.C139 -> C139ResolveRepository(C139Api())
             SharePlatform.PAN123 -> Pan123ResolveRepository(Pan123Api()) { credential() }
