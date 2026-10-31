@@ -4,9 +4,11 @@ import com.yunx.app.data.db.AppDatabase
 import com.yunx.app.data.db.BookmarkEntity
 import com.yunx.app.data.db.LinkHistoryEntity
 import com.yunx.app.data.download.DownloadManager
+import com.yunx.app.data.download.DownloadPlatform
 import com.yunx.app.data.network.*
 import com.yunx.app.data.network.model.*
 import com.yunx.app.data.network.video.VideoLinkParser
+import com.yunx.app.data.prefs.SettingsRepository
 import com.yunx.app.data.repository.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeout
@@ -54,6 +56,7 @@ class ServerService(
     private val github = GitHubApi(tokenProvider = { credentials.get("GITHUB").optString("accessToken") })
     private val githubBrowser = GitHubBrowser(github)
     val video = VideoService(credentials)
+    private val settingsRepo = SettingsRepository()
 
     fun exportAccounts(password: String): String = AccountBackup.export(credentials, password, video.platforms.keys)
     fun importAccounts(content: String, password: String): Int {
@@ -136,16 +139,64 @@ class ServerService(
 
     fun settings(): JSONObject {
         val saved = credentials.get("_SETTINGS")
-        return JSONObject().put("threads", saved.optInt("threads", System.getenv("YUNX_THREADS")?.toIntOrNull() ?: 16))
+        return JSONObject()
             .put("concurrency", saved.optInt("concurrency", System.getenv("YUNX_CONCURRENCY")?.toIntOrNull() ?: 3))
             .put("speedLimit", saved.optLong("speedLimit", System.getenv("YUNX_SPEED_LIMIT")?.toLongOrNull() ?: 0))
+            .put("platformThreads", platformThreads())
     }
+
+    /** SharePlatform → 下载线程配置键（DownloadPlatform 常量为小写字符串） */
+    private fun panDownloadPlatform(p: SharePlatform): String = when (p) {
+        SharePlatform.QUARK -> DownloadPlatform.QUARK
+        SharePlatform.UC -> DownloadPlatform.UC
+        SharePlatform.XUNLEI -> DownloadPlatform.XUNLEI
+        SharePlatform.BAIDU -> DownloadPlatform.BAIDU
+        SharePlatform.C139 -> DownloadPlatform.C139
+        SharePlatform.PAN123 -> DownloadPlatform.PAN123
+        SharePlatform.PAN115 -> DownloadPlatform.PAN115
+        SharePlatform.GUANGYA -> DownloadPlatform.GUANGYA
+        SharePlatform.ILANZOU -> DownloadPlatform.ILANZOU
+        SharePlatform.LANZOU -> DownloadPlatform.LANZOU
+        SharePlatform.GITHUB -> DownloadPlatform.GITHUB
+    }
+
+    /**
+     * 各平台下载线程配置（设置页弹窗数据源）：通用 + 全部网盘 + 全部视频平台。
+     * 与桌面版同源（SettingsRepository，java.util.prefs）；迅雷固定 8 不可改。
+     */
+    fun platformThreads(): JSONArray {
+        val rows = JSONArray()
+        fun row(platform: String, fixed: Boolean) = rows.put(
+            JSONObject().put("platform", platform).put("fixed", fixed)
+                .put("threads", settingsRepo.downloadThreadsFor(platform))
+        )
+        row(DownloadPlatform.GENERIC, false)
+        SharePlatform.entries.forEach { row(panDownloadPlatform(it), it == SharePlatform.XUNLEI) }
+        video.platforms.values.forEach { row(DownloadPlatform.forVideoPlatform(it.platform), false) }
+        return rows
+    }
+
+    fun savePlatformThreads(body: JSONObject) {
+        val input = body.getJSONObject("threads")
+        val allowed = buildSet {
+            add(DownloadPlatform.GENERIC)
+            SharePlatform.entries.forEach { add(panDownloadPlatform(it)) }
+            video.platforms.values.forEach { add(DownloadPlatform.forVideoPlatform(it.platform)) }
+        }
+        require(input.keySet().all { it in allowed }) { "未知平台" }
+        require(input.keySet().all { input.get(it) is Int }) { "线程数格式错误" }
+        input.keySet().forEach { key ->
+            val value = input.getInt(key)
+            require(value in 1..512) { "线程数超出范围" }
+            settingsRepo.setDownloadThreads(key, value)
+        }
+    }
+
     fun saveSettings(body: JSONObject): JSONObject {
-        val threads = body.getInt("threads")
         val concurrency = body.getInt("concurrency")
         val speed = body.getLong("speedLimit")
-        require(threads in 1..128 && concurrency in 1..10 && speed in 0..1_000_000_000_000L) { "下载设置超出范围" }
-        val saved = JSONObject().put("threads", threads).put("concurrency", concurrency).put("speedLimit", speed)
+        require(concurrency in 1..10 && speed in 0..1_000_000_000_000L) { "下载设置超出范围" }
+        val saved = JSONObject().put("concurrency", concurrency).put("speedLimit", speed)
         credentials.save("_SETTINGS", saved)
         return saved
     }

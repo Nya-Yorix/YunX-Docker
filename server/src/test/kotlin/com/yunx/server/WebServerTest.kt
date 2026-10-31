@@ -144,10 +144,19 @@ class WebServerTest {
 
     @Test
     fun `settings persist and cloud sessions reject unconfigured accounts and forged ids`() {
-        assertEquals(200, request("/api/settings", """{"threads":8,"concurrency":2,"speedLimit":1048576}""").first)
-        assertEquals(8, JSONObject(request("/api/settings").second).getInt("threads"))
-        assertEquals(8, Credentials(accountFile).get("_SETTINGS").getInt("threads"))
-        assertEquals(400, request("/api/settings", """{"threads":129,"concurrency":2,"speedLimit":0}""").first)
+        assertEquals(200, request("/api/settings", """{"concurrency":2,"speedLimit":1048576}""").first)
+        assertEquals(2, JSONObject(request("/api/settings").second).getInt("concurrency"))
+        assertEquals(2, Credentials(accountFile).get("_SETTINGS").getInt("concurrency"))
+        assertEquals(400, request("/api/settings", """{"concurrency":99,"speedLimit":0}""").first)
+        assertEquals(200, request("/api/settings/threads", """{"threads":{"quark":24,"video_bilibili":10}}""").first)
+        val rows = JSONObject(request("/api/settings").second).getJSONArray("platformThreads")
+        val byPlatform = (0 until rows.length()).associate { rows.getJSONObject(it).getString("platform") to rows.getJSONObject(it) }
+        assertEquals(24, byPlatform.getValue("quark").getInt("threads"))
+        assertEquals(10, byPlatform.getValue("video_bilibili").getInt("threads"))
+        assertEquals(8, byPlatform.getValue("xunlei").getInt("threads"))
+        assertEquals(true, byPlatform.getValue("xunlei").getBoolean("fixed"))
+        assertEquals(400, request("/api/settings/threads", """{"threads":{"nonsense-platform":24}}""").first)
+        assertEquals(400, request("/api/settings/threads", """{"threads":{"quark":9999}}""").first)
         assertEquals(400, request("/api/account-info", """{"platform":"QUARK"}""").first)
         assertEquals(400, request("/api/cloud/files", """{"platform":"QUARK"}""").first)
         assertEquals(400, request("/api/cloud/download", """{"sessionId":"forged","fid":"1"}""").first)

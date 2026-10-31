@@ -76,7 +76,7 @@ docker compose -f docker-compose.nas.yml exec -T yunx cat /data/initial-password
 | `YUNX_PORT` | `8080` | 宿主机端口 |
 | `YUNX_BIND_ADDRESS` | `0.0.0.0` | 宿主机监听地址 |
 | `YUNX_DOWNLOAD_PATH` | `./downloads` | 宿主机下载目录 |
-| `YUNX_THREADS` | `16` | 每个任务的下载线程数，1–128 |
+| `YUNX_THREADS` | `32` | 首次启动的「通用」默认线程（1–512）；之后以网页「设置 → 配置各平台线程」为准 |
 | `YUNX_CONCURRENCY` | `3` | 同时下载任务数，1–10 |
 | `YUNX_SPEED_LIMIT` | `0` | 总限速，单位字节/秒；0 不限速 |
 | `TZ` | `Asia/Shanghai` | 容器时区 |

@@ -7,6 +7,7 @@ import com.yunx.app.data.db.AppDatabase
 import com.yunx.app.data.download.ChunkDownloader
 import com.yunx.app.data.download.DownloadManager
 import com.yunx.app.data.network.HttpClients
+import com.yunx.app.data.prefs.SettingsRepository
 import com.yunx.app.util.LogRedactor
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
@@ -163,6 +164,7 @@ class WebServer(
                 "/api/backup/export" -> service.backupExport(body)
                 "/api/backup/import" -> service.backupImport(body)
                 "/api/settings" -> service.saveSettings(body)
+                "/api/settings/threads" -> { service.savePlatformThreads(body); JSONObject().put("ok", true) }
                 "/api/library" -> service.libraryAction(body)
                 else -> { json(e, 404, JSONObject().put("error", "接口不存在")); return@runBlocking null }
             }
@@ -202,9 +204,17 @@ fun main() {
     val db = AppDatabase.get()
     val store = Credentials(File(AppContext.dataDir, "server-credentials.enc"))
     runBlocking { db.downloadTaskDao().markInterruptedAsPaused() }
+    // 各平台下载线程（与桌面版同源，SettingsRepository）。旧部署的 _SETTINGS.threads 与
+    // 环境变量 YUNX_THREADS 只在偏好里还没有「通用线程」时迁移一次作为默认；之后以网页
+    // 「各平台线程配置」为准（每平台键 download_threads_<platform>）。
+    val settingsRepo = SettingsRepository()
+    if (AppContext.settingsPrefs.get("download_threads", null) == null) {
+        val seed = store.get("_SETTINGS").optInt("threads", System.getenv("YUNX_THREADS")?.toIntOrNull() ?: 32)
+        AppContext.settingsPrefs.putInt("download_threads", seed.coerceIn(1, 512))
+    }
     val downloads = DownloadManager(
         db.downloadTaskDao(), ChunkDownloader { HttpClients.downloadClient() },
-        threadProvider = { store.get("_SETTINGS").optInt("threads", System.getenv("YUNX_THREADS")?.toIntOrNull() ?: 16).coerceIn(1, 128) },
+        threadProvider = { platform -> settingsRepo.downloadThreadsFor(platform) },
         saveDirProvider = { downloadDir.absolutePath },
         concurrencyProvider = { store.get("_SETTINGS").optInt("concurrency", System.getenv("YUNX_CONCURRENCY")?.toIntOrNull() ?: 3).coerceIn(1, 10) },
         speedLimitProvider = { store.get("_SETTINGS").optLong("speedLimit", System.getenv("YUNX_SPEED_LIMIT")?.toLongOrNull() ?: 0L).coerceAtLeast(0) },
