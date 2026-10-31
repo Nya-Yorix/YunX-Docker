@@ -6,6 +6,7 @@ import com.yunx.app.data.db.LinkHistoryEntity
 import com.yunx.app.data.download.DownloadManager
 import com.yunx.app.data.network.*
 import com.yunx.app.data.network.model.*
+import com.yunx.app.data.network.video.VideoLinkParser
 import com.yunx.app.data.repository.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeout
@@ -272,7 +273,7 @@ class ServerService(
             }
             val id = existing.ifBlank { require(cloudSessions.size < 100) { "目录会话过多" }; UUID.randomUUID().toString() }
             cloudSessions[id] = session
-            JSONObject().put("sessionId", id).put("platform", p.name).put("directory", dir).put("title", "我的网盘")
+            JSONObject().put("sessionId", id).put("platform", p.name).put("directory", dir).put("title", "首页")
                 .put("files", JSONArray(files.map { fileJson(it).put("directoryId", CloudMutationPolicy.directoryId(p, it)) }))
                 .put("directories", cloudDirectories(session))
                 .put("hasMore", more).put("cursor", cursor)
@@ -397,7 +398,13 @@ class ServerService(
     suspend fun resolve(body: JSONObject): JSONObject = sessionLock.withLock {
         val text = body.getString("link").trim()
         val parsed = ShareLinkParser.parse(text)
-        if (parsed == null) return@withLock githubResolve(text)
+        if (parsed == null) {
+            // 同一输入栏自动分流：不是网盘分享链接时，先试视频/图文链接，再落 GitHub/直连
+            if (VideoLinkParser.parse(text) != null) {
+                return@withLock video.parse(body).put("kind", "video")
+            }
+            return@withLock githubResolve(text)
+        }
         sessions.entries.removeIf { System.currentTimeMillis() - it.value.created > 3_600_000 }
         require(sessions.size < 100) { "分享会话过多，请稍后再试" }
         val repository = repo(parsed.platform)

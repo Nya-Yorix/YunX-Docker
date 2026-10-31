@@ -46,12 +46,13 @@ class VideoService(private val credentials: Credentials) {
     )
 
     /**
-     * 账号页提供 Cookie 配置的平台。快手/微博/AcFun/小红书匿名即可解析（上游约定），
-     * 不提供配置入口；哔哩哔哩登录后取高清，Pixiv 需登录态拿全量。
+     * 账号页提供 Cookie 配置的平台。快手/微博/AcFun 匿名即可解析（上游约定），
+     * 不提供配置入口；哔哩哔哩登录后取高清，小红书登录态可解析更全内容，Pixiv 需登录态拿全量。
      * 解析时仍会读取历史保存过的 Cookie（如果有的话），只是不再展示配置入口。
      */
     val configurable: Map<String, VideoParser> = linkedMapOf(
         "VIDEO_BILIBILI" to BilibiliParser,
+        "VIDEO_XHS" to XhsParser,
         "VIDEO_PIXIV" to PixivParser,
     )
 

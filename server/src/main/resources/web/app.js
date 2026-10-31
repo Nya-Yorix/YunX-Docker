@@ -195,7 +195,8 @@ function renderAccounts() {
     const head = el("div","account-head"), info = el("div");
     info.append(el("h2","",names[p]),el("span","metadata", account.profile?.nickname || "已配置凭证"));
     head.append(icon("cloud"),info); card.append(head);
-    const q = account.profile?.quota;
+    const noQuota = p === "GITHUB" || p.startsWith("VIDEO_");
+    const q = noQuota ? null : account.profile?.quota;
     if (q && q.total > 0) {
       const value = el("strong","capacity-value",size(q.used)); value.append(el("small","","已用")); card.append(value);
       const meter = el("div","quota-bar"), ratio = Math.min(1,Math.max(0,q.used/q.total));
@@ -204,8 +205,8 @@ function renderAccounts() {
       for (let i=0;i<24;i++) meter.append(el("i", i<Math.ceil(ratio*24) ? "filled"+(ratio>.9 ? " warning":"") : ""));
       const meta = el("div","capacity-meta"); meta.append(el("span","","总容量 "+size(q.total)),el("span","",Math.round(ratio*100)+"%"));
       card.append(meter,meta);
-    } else {
-      card.append(el("strong","capacity-value","—"),el("div","capacity-meta",profilePending.has(p) ? "读取容量中…" : p === "GITHUB" ? "代码托管账号" : account.profile ? "容量暂不可用" : "容量尚未读取"));
+    } else if (!noQuota) {
+      card.append(el("div","capacity-na", profilePending.has(p) ? "读取容量中…" : "容量尚未读取"));
     }
     const actions = el("div","toolbar");
     if (account.cloudSupported) actions.append(command("浏览文件","folder-open",async () => { await view("cloud"); await loadCloud(p); },"secondary"));
