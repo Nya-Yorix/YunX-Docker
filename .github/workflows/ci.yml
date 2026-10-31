@@ -6,6 +6,7 @@ on:
   workflow_call:
 permissions:
   contents: read
+  packages: write
 jobs:
   container:
     strategy:
@@ -32,3 +33,9 @@ jobs:
           cache-to: type=gha,mode=max,scope=server-${{ matrix.arch }}
       - name: Verify container and NAS deployment
         run: node server/scripts/container-smoke.mjs
+      - name: Push image to GHCR
+        if: github.event_name == 'push'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker tag yunx-server:ci "ghcr.io/nya-yorix/yunx-server:main-${{ matrix.arch }}"
+          docker push "ghcr.io/nya-yorix/yunx-server:main-${{ matrix.arch }}"
