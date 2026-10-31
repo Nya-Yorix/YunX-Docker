@@ -95,6 +95,8 @@ form>button{margin-top:16px}
 .cloud-delete-detail{white-space:pre-wrap;overflow-wrap:anywhere}
 .select-all{display:flex;align-items:center;gap:12px;margin:0;color:var(--secondary)}
 .threads-field{display:flex;align-items:center;gap:8px;margin:0;color:var(--secondary);font-size:12px}
+.engine-meta{display:flex;align-items:center;gap:12px;margin-top:8px;flex-wrap:wrap}
+.engine-meta .metadata{margin:0}
 .threads-input{width:88px;min-height:36px;padding:6px 10px;font:13px var(--mono)}
 .threads-rows{display:grid;grid-template-columns:1fr 1fr;gap:2px 32px;margin:12px 0;max-height:52vh;overflow:auto}
 .threads-row{display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid var(--line)}

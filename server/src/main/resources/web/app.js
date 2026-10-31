@@ -117,10 +117,14 @@ async function view(name) {
   if (name === "settings") {
     const generation = ++settingsGeneration;
     $("settings-form").querySelectorAll("input,button").forEach(node=>node.disabled=true);
-    const data = await api("settings");
+    const [data, engine] = await Promise.all([api("settings"), api("engine")]);
     if (generation !== settingsGeneration) return;
     $("setting-concurrency").value = data.concurrency;
     $("setting-speed").value = +(data.speedLimit/1048576).toFixed(2);
+    $("setting-trackers").value = data.btTrackers || "";
+    engineSelection = data.downloadEngine === "gopeed" ? "gopeed" : "builtin";
+    renderEngineOptions();
+    renderEngineState(engine);
     $("settings-form").querySelectorAll("input,button").forEach(node=>node.disabled=false);
   }
 }
@@ -563,7 +567,8 @@ async function refreshTasks() {
     const detail = el("div","task-detail"), top = el("div","task-top");
     top.append(el("div","file-name",task.filename),el("span","task-status"+(task.status === 3 ? " complete" : task.status === 4 ? " failed" : ""),task.mergePercent >= 0 ? "合并中 "+task.mergePercent+"%" : statuses[task.status]));
     const progress = el("progress"); progress.max = Math.max(task.total,task.downloaded,1); progress.value = task.status === 3 ? progress.max : task.downloaded; progress.setAttribute("aria-label",task.filename+" 下载进度");
-    detail.append(top,progress,el("div","metadata",size(task.downloaded)+" / "+(task.total ? size(task.total) : "未知大小")+(task.speed ? " · "+size(task.speed)+"/s" : "")));
+    detail.append(top,progress,el("div","metadata",size(task.downloaded)+" / "+(task.total ? size(task.total) : "未知大小")+(task.speed ? " · "+size(task.speed)+"/s" : "")
+      +(task.seeds >= 0 ? " · 种子 "+task.seeds : "")+(task.peers >= 0 ? " · 连接 "+task.peers : "")));
     if (task.status === 3) detail.append(el("div","metadata",task.savePath));
     if (task.status === 4 && task.error) detail.append(el("div","error",task.error));
     const actions = el("div","task-actions");
@@ -595,10 +600,38 @@ $("resume-all").addEventListener("click",() => busy($("resume-all"),() => taskBa
 $("settings-form").addEventListener("submit",event => {
   event.preventDefault(); busy(event.submitter,async () => {
     notice("",false,"settings-status");
-    await api("settings",{concurrency:Number($("setting-concurrency").value),speedLimit:Math.round(Number($("setting-speed").value)*1048576)});
+    await api("settings",{concurrency:Number($("setting-concurrency").value),speedLimit:Math.round(Number($("setting-speed").value)*1048576),
+      downloadEngine:engineSelection,btTrackers:$("setting-trackers").value});
     notice("下载设置已保存",false,"settings-status");
   },"settings-status");
 });
+// ---- 下载引擎（Gopeed）：选择、内核状态与在线安装、BT Tracker 列表 ----
+let engineSelection = "builtin";
+function renderEngineOptions() {
+  $("engine-options").querySelectorAll("button").forEach(b => {
+    const active = b.dataset.engine === engineSelection;
+    b.classList.toggle("active",active); b.setAttribute("aria-pressed",String(active));
+  });
+}
+$("engine-options").querySelectorAll("button").forEach(b => b.addEventListener("click",() => {
+  engineSelection = b.dataset.engine; renderEngineOptions();
+}));
+function renderEngineState(engine) {
+  const state = $("engine-kernel-state");
+  if (!engine.installed) {
+    state.textContent = "内核未安装 —— 在线安装后即可使用 Gopeed 引擎（磁力 / ed2k / BT 下载）";
+  } else {
+    state.textContent = "内核已就绪（" + size(engine.kernelSize) + "）" + (engine.running ? " · 运行中" : "")
+      + (engine.enabled ? " · 已选为下载引擎" : " · 保存「Gopeed 引擎」选择后对所有网盘任务生效");
+  }
+}
+$("engine-install").addEventListener("click",() => busy($("engine-install"),async () => {
+  notice("",false,"settings-status");
+  $("engine-kernel-state").textContent = "正在下载 Gopeed 内核…";
+  await api("engine",{action:"install"});
+  notice("Gopeed 内核已安装",false,"settings-status");
+  renderEngineState(await api("engine"));
+}));
 // ---- 各平台下载线程（设置页弹窗；服务端与桌面版同源持久化，迅雷固定 8）----
 function platformLabel(key) {
   if (!key || key === "generic") return "通用（直链 / 未单独配置）";

@@ -110,6 +110,7 @@ class WebServer(
                 "/api/accounts" -> json(e, 200, service.accounts())
                 "/api/tasks" -> json(e, 200, runBlocking { service.tasks() })
                 "/api/settings" -> json(e, 200, service.settings())
+                "/api/engine" -> json(e, 200, service.engineStatus())
                 "/api/library" -> json(e, 200, runBlocking { service.library() })
                 else -> json(e, 404, JSONObject().put("error", "页面不存在"))
             }
@@ -168,6 +169,7 @@ class WebServer(
                 "/api/video/download" -> service.videoDownload(body)
                 "/api/backup/export" -> service.backupExport(body)
                 "/api/backup/import" -> service.backupImport(body)
+                "/api/engine" -> service.engineInstall()
                 "/api/settings" -> service.saveSettings(body)
                 "/api/settings/threads" -> { service.savePlatformThreads(body); JSONObject().put("ok", true) }
                 "/api/library" -> service.libraryAction(body)
@@ -217,6 +219,16 @@ fun main() {
         val seed = store.get("_SETTINGS").optInt("threads", System.getenv("YUNX_THREADS")?.toIntOrNull() ?: 32)
         AppContext.settingsPrefs.putInt("download_threads", seed.coerceIn(1, 512))
     }
+    // P2P 引擎内核：镜像构建期下载的压缩包（YUNX_P2P_KERNEL）在未安装时自动导入一次，
+    // 落到 <dataDir>/gopeed/（随数据卷持久化）；运行期在线安装走 /api/engine。
+    System.getenv("YUNX_P2P_KERNEL")?.takeIf { it.isNotBlank() }?.let { path ->
+        val archive = File(path)
+        if (archive.isFile && !com.yunx.app.data.gopeed.GopeedEngine.isInstalled()) {
+            runCatching { com.yunx.app.data.gopeed.GopeedEngine.installFromArchive(archive) }
+                .onSuccess { println("Gopeed kernel installed from $path") }
+                .onFailure { println("Gopeed kernel auto-install failed: ${it.message}") }
+        }
+    }
     val downloads = DownloadManager(
         db.downloadTaskDao(), ChunkDownloader { HttpClients.downloadClient() },
         threadProvider = { platform -> settingsRepo.downloadThreadsFor(platform) },
@@ -224,6 +236,15 @@ fun main() {
         concurrencyProvider = { store.get("_SETTINGS").optInt("concurrency", System.getenv("YUNX_CONCURRENCY")?.toIntOrNull() ?: 3).coerceIn(1, 10) },
         speedLimitProvider = { store.get("_SETTINGS").optLong("speedLimit", System.getenv("YUNX_SPEED_LIMIT")?.toLongOrNull() ?: 0L).coerceAtLeast(0) },
         keepAwakeProvider = { false }, showSpeedProvider = { false },
+        // 下载引擎选择与桌面版同源（SettingsRepository 的 download_engine 偏好）；
+        // 偏好未配置时回退环境变量 YUNX_DOWNLOAD_ENGINE（builtin/gopeed）
+        engineEnabledProvider = {
+            when (AppContext.settingsPrefs.get("download_engine", null)) {
+                "gopeed" -> true
+                "builtin" -> false
+                else -> System.getenv("YUNX_DOWNLOAD_ENGINE")?.equals("gopeed", ignoreCase = true) == true
+            }
+        },
         externalEngine = com.yunx.app.data.gopeed.GopeedDownloadEngine
     )
     val service = ServerService(db, downloads, store)

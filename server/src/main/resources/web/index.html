@@ -53,9 +53,10 @@
         <div id="share-browser"></div>
         <div class="saved-links"><div class="list-toolbar"><h2>保存的链接</h2><div class="segmented" id="library-tabs" role="group" aria-label="保存的链接"><button type="button" data-library="bookmarks" class="active">收藏</button><button type="button" data-library="history">最近解析</button></div></div><div id="library-list"></div></div>
         <details class="direct-section"><summary>添加直链下载</summary><form id="direct-form">
-          <label for="direct-url">下载地址</label><input id="direct-url" type="url" required placeholder="https://">
-          <label for="direct-name">文件名</label><input id="direct-name" placeholder="可留空">
+          <label for="direct-url">下载地址 · 支持 HTTP/HTTPS、磁力与 ed2k 链接</label><input id="direct-url" type="text" required placeholder="https:// 或 magnet:/ed2k: 链接">
+          <label for="direct-name">文件名</label><input id="direct-name" placeholder="可留空（磁力 / ed2k 由引擎自动命名）">
           <label for="direct-threads">线程覆盖 · 0 跟随全局设置</label><input id="direct-threads" type="number" min="0" max="128" value="0">
+          <p class="metadata">磁力 / ed2k / BT 需要「设置 → 下载引擎」切换为 Gopeed 并安装内核。</p>
           <button class="secondary" type="submit"><i data-lucide="plus"></i>加入下载</button>
         </form></details>
       </section>
@@ -76,6 +77,12 @@
         <div class="settings-section"><div><h2>下载设置</h2><span class="metadata">TRANSFER</span></div><form id="settings-form">
           <div class="form-grid"><div><label>各平台下载线程</label><button id="threads-config" class="secondary" type="button"><i data-lucide="cpu"></i>配置各平台线程</button></div><div><label for="setting-concurrency">同时下载任务数</label><input id="setting-concurrency" type="number" min="1" max="10" required></div></div>
           <label for="setting-speed">总限速 · MiB/s，0 为不限速</label><input id="setting-speed" type="number" min="0" max="953674" step="0.01" required>
+          <label>下载引擎 · 磁力 / ed2k / BT 仅 Gopeed 支持</label>
+          <div class="segmented" id="engine-options" role="group" aria-label="下载引擎">
+            <button type="button" data-engine="builtin">内置下载器</button><button type="button" data-engine="gopeed">Gopeed 引擎</button>
+          </div>
+          <div class="engine-meta"><span id="engine-kernel-state" class="metadata"></span><button id="engine-install" class="secondary" type="button" hidden><i data-lucide="download"></i>在线安装内核</button></div>
+          <label for="setting-trackers">BT Tracker 列表 · 每行一个，留空用内置默认列表</label><textarea id="setting-trackers" rows="4" placeholder="tracker://host/announce（每行一个）"></textarea>
           <p id="settings-status" class="inline-status" role="status"></p><button class="secondary" type="submit"><i data-lucide="save"></i>保存设置</button>
         </form></div>
         <div class="settings-section"><div><h2>账号备份</h2><span class="metadata">CREDENTIAL BACKUP</span></div>

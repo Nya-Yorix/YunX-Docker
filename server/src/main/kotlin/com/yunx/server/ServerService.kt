@@ -5,6 +5,8 @@ import com.yunx.app.data.db.BookmarkEntity
 import com.yunx.app.data.db.LinkHistoryEntity
 import com.yunx.app.data.download.DownloadManager
 import com.yunx.app.data.download.DownloadPlatform
+import com.yunx.app.data.gopeed.GopeedEngine
+import com.yunx.app.data.gopeed.GopeedKernelProvisioner
 import com.yunx.app.data.network.*
 import com.yunx.app.data.network.model.*
 import com.yunx.app.data.network.video.VideoLinkParser
@@ -143,6 +145,8 @@ class ServerService(
             .put("concurrency", saved.optInt("concurrency", System.getenv("YUNX_CONCURRENCY")?.toIntOrNull() ?: 3))
             .put("speedLimit", saved.optLong("speedLimit", System.getenv("YUNX_SPEED_LIMIT")?.toLongOrNull() ?: 0))
             .put("platformThreads", platformThreads())
+            .put("downloadEngine", settingsRepo.downloadEngine)
+            .put("btTrackers", settingsRepo.btTrackers)
     }
 
     /** SharePlatform → 下载线程配置键（DownloadPlatform 常量为小写字符串） */
@@ -198,7 +202,30 @@ class ServerService(
         require(concurrency in 1..10 && speed in 0..1_000_000_000_000L) { "下载设置超出范围" }
         val saved = JSONObject().put("concurrency", concurrency).put("speedLimit", speed)
         credentials.save("_SETTINGS", saved)
+        if (body.has("downloadEngine")) {
+            val engine = body.getString("downloadEngine")
+            require(engine in setOf(SettingsRepository.ENGINE_BUILTIN, SettingsRepository.ENGINE_GOPEED)) { "未知下载引擎" }
+            settingsRepo.downloadEngine = engine
+        }
+        if (body.has("btTrackers")) {
+            val trackers = body.getString("btTrackers")
+            require(trackers.length <= 65536 && trackers.lines().size <= 500) { "Tracker 列表过长" }
+            settingsRepo.btTrackers = trackers
+        }
         return saved
+    }
+
+    /** 下载引擎状态（设置页「下载引擎」区块数据源） */
+    fun engineStatus(): JSONObject = JSONObject()
+        .put("enabled", settingsRepo.downloadEngine == SettingsRepository.ENGINE_GOPEED)
+        .put("installed", GopeedEngine.isInstalled())
+        .put("running", com.yunx.app.data.gopeed.GopeedDownloadEngine.isRunning())
+        .put("kernelSize", GopeedEngine.kernelSize())
+
+    /** 在线安装/重装 Gopeed 内核（运行时兜底；镜像内置内核走启动时自动导入） */
+    suspend fun engineInstall(): JSONObject {
+        val installed = GopeedKernelProvisioner.provision(null) { }
+        return JSONObject().put("ok", true).put("size", installed.length())
     }
     suspend fun library(): JSONObject = JSONObject()
         .put("bookmarks", JSONArray(db.bookmarkDao().observeAll().first().map {
@@ -549,10 +576,18 @@ class ServerService(
 
     suspend fun direct(body: JSONObject): JSONObject {
         val url = body.getString("url")
+        require(url.length <= 8192) { "链接过长" }
+        val threads = video.threadsOf(body)
+        // P2P（磁力 / ed2k）：文件名交给引擎按元数据命名；引擎未就绪时 enqueue 按上游语义
+        // 落失败任务并给出引导文案（设置页「下载引擎」可安装内核 / 切换引擎）。
+        val scheme = runCatching { URI(url).scheme?.lowercase() }.getOrNull()
+        if (scheme == "magnet" || scheme == "ed2k") {
+            return JSONObject().put("id", downloads.enqueue(url, "", threads = threads))
+        }
         val uri = URI(url)
         require(uri.scheme in listOf("http", "https") && uri.host != null && uri.userInfo == null) { "请输入 HTTP/HTTPS 下载地址" }
         val name = body.optString("filename").ifBlank { uri.path.substringAfterLast('/').ifBlank { "download" } }
-        return JSONObject().put("id", downloads.enqueue(url, name, threads = video.threadsOf(body)))
+        return JSONObject().put("id", downloads.enqueue(url, name, threads = threads))
     }
 
     /** 视频解析（实验性）：识别 + 解析，直链留在服务器会话里 */
@@ -566,6 +601,7 @@ class ServerService(
         JSONObject().put("id", t.id).put("filename", t.fileName).put("status", t.status)
             .put("downloaded", t.downloadedSize).put("total", t.totalSize)
             .put("speed", stats?.speed ?: 0).put("mergePercent", stats?.mergePercent ?: -1)
+            .put("seeds", stats?.seeds ?: -1).put("peers", stats?.peers ?: -1)
             .put("error", t.errorMsg).put("savePath", t.savePath)
     })
 
