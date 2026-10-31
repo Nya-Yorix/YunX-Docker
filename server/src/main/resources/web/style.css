@@ -231,14 +231,18 @@ dialog::backdrop{background:rgba(0,0,0,.8)}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 /* ---------- 动效(克制专业:150-280ms,ease-out,只用 opacity/transform 合成层属性) ---------- */
-@keyframes fade-up{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fade-up{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @keyframes fade-in{from{opacity:0}to{opacity:1}}
-@keyframes pop-in{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:scale(1)}}
-/* 页面切换进场:hidden→显示时 keyframes 自动重放,正好一次进场;视图内轮询不重触发 */
-#app main>section,#login-view{animation:fade-up var(--motion-base) var(--ease-out) both}
-#app{animation:fade-up var(--motion-slow) var(--ease-out) both}
+@keyframes pop-in{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+/* 页面切换进场:hidden→显示时 keyframes 自动重放,正好一次进场;视图内轮询不重触发。
+   ★ 填充模式必须用 backwards(结束后回到无 transform 的自然态):
+     both 会永久保留 transform,使内部 position:fixed 的侧边导航栏改为相对 #app 定位,
+     高度随页面内容拉伸;且祖先带 transform 的动画期间也会短暂改变 fixed 定位,
+     所以不对包含 fixed 侧栏的 #app 整体做动画,只动 login-view 与 main 内的 section。 */
+#app main>section,#login-view{animation:fade-up var(--motion-base) var(--ease-out) backwards}
+#app main{animation:fade-up var(--motion-slow) var(--ease-out) backwards}
 /* 列表交错进场:JS 仅对新节点添加 .enter(--stagger-i 为新节点序号,由上限控制) */
-.enter{animation:fade-up var(--motion-base) var(--ease-out) both;animation-delay:calc(var(--stagger-i,0)*35ms)}
+.enter{animation:fade-up var(--motion-base) var(--ease-out) backwards;animation-delay:calc(var(--stagger-i,0)*35ms)}
 /* 对话框弹入;关闭保持瞬时(克制) */
 dialog[open]{animation:pop-in var(--motion-base) var(--ease-out)}
 dialog[open]::backdrop{animation:fade-in var(--motion-base) ease-out}
