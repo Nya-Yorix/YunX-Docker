@@ -191,12 +191,11 @@ function renderAccounts() {
   $("account-list").replaceChildren();
   if (!configured.length) $("account-list").append(el("div","empty","尚未添加账号"));
   for (const account of configured) {
-    const p = account.platform;
-    const noQuota = p === "GITHUB" || p.startsWith("VIDEO_");
-    const card = el("article","account-card"+(noQuota ? " compact" : "")); card.dataset.platform = p;
+    const p = account.platform, card = el("article","account-card"); card.dataset.platform = p;
     const head = el("div","account-head"), info = el("div");
     info.append(el("h2","",names[p]),el("span","metadata", account.profile?.nickname || "已配置凭证"));
     head.append(icon("cloud"),info); card.append(head);
+    const noQuota = p === "GITHUB" || p.startsWith("VIDEO_");
     const q = noQuota ? null : account.profile?.quota;
     if (q && q.total > 0) {
       const value = el("strong","capacity-value",size(q.used)); value.append(el("small","","已用")); card.append(value);
@@ -207,7 +206,10 @@ function renderAccounts() {
       const meta = el("div","capacity-meta"); meta.append(el("span","","总容量 "+size(q.total)),el("span","",Math.round(ratio*100)+"%"));
       card.append(meter,meta);
     } else if (!noQuota) {
-      card.append(el("div","capacity-na", profilePending.has(p) ? "读取容量中…" : "容量尚未读取"));
+      if (profilePending.has(p)) card.append(el("div","capacity-na","读取容量中…"));
+      else if (account.profile?.error) card.append(el("div","capacity-na capacity-error","登录失败"));
+      else if (account.profile) card.append(el("div","capacity-na","容量暂不可用"));
+      else card.append(el("div","capacity-na","容量尚未读取"));
     }
     const actions = el("div","toolbar");
     if (account.cloudSupported) actions.append(command("浏览文件","folder-open",async () => { await view("cloud"); await loadCloud(p); },"secondary"));
