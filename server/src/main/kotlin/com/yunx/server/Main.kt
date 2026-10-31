@@ -155,6 +155,8 @@ class WebServer(
                 "/api/account-info" -> service.accountInfo(body)
                 "/api/cloud/files" -> service.cloudFiles(body)
                 "/api/cloud/download" -> service.cloudDownload(body)
+                "/api/video" -> service.video(body)
+                "/api/video/download" -> service.videoDownload(body)
                 "/api/settings" -> service.saveSettings(body)
                 "/api/library" -> service.libraryAction(body)
                 else -> { json(e, 404, JSONObject().put("error", "接口不存在")); return@runBlocking null }

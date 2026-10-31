@@ -1,6 +1,7 @@
 "use strict";
 const $ = id => document.getElementById(id);
-const names = { QUARK:"夸克网盘", UC:"UC 网盘", XUNLEI:"迅雷网盘", BAIDU:"百度网盘", C139:"139 网盘", PAN123:"123 云盘", PAN115:"115 网盘", GUANGYA:"光鸭云盘", ILANZOU:"蓝奏优享", LANZOU:"蓝奏云", GITHUB:"GitHub" };
+const names = { QUARK:"夸克网盘", UC:"UC 网盘", XUNLEI:"迅雷网盘", BAIDU:"百度网盘", C139:"139 网盘", PAN123:"123 云盘", PAN115:"115 网盘", GUANGYA:"光鸭云盘", ILANZOU:"蓝奏优享", LANZOU:"蓝奏云", GITHUB:"GitHub",
+  VIDEO_BILIBILI:"哔哩哔哩", VIDEO_KUAISHOU:"快手", VIDEO_WEIBO:"微博", VIDEO_ACFUN:"AcFun", VIDEO_XHS:"小红书", VIDEO_PIXIV:"Pixiv" };
 const statuses = ["等待中","下载中","已暂停","已完成","失败"];
 let activeView = "cloud", accountStates = [], taskStates = [], taskFilter = "all", loggedIn = false, pendingRemoval = "", libraryTab = "bookmarks";
 let libraryData = {bookmarks:[],history:[]};
@@ -299,13 +300,54 @@ $("resolve-form").addEventListener("submit",event => {
 });
 $("direct-form").addEventListener("submit",event => {
   event.preventDefault(); busy(event.submitter,async () => {
-    await api("direct",{url:$("direct-url").value,filename:$("direct-name").value});
+    await api("direct",{url:$("direct-url").value,filename:$("direct-name").value,threads:Number($("direct-threads").value)||0});
     $("direct-form").reset(); await view("tasks"); notice("已加入下载");
   });
 });
+// ---- 视频解析（实验）----
+let videoSession = null;
+$("video-form").addEventListener("submit",event => {
+  event.preventDefault(); busy(event.submitter,async () => {
+    videoSession = await api("video",{link:$("video-link").value});
+    $("video-link").value = "";
+    renderVideo(videoSession);
+    notice("视频解析完成");
+  });
+});
+function renderVideo(result) {
+  const root = $("video-result"); root.replaceChildren();
+  const card = el("article","video-card");
+  const head = el("div","browser-title");
+  head.append(icon("clapperboard"),el("h2","",result.title || "视频结果"),el("span","metadata",names[result.platform] || ""));
+  card.append(head);
+  if (result.author) card.append(el("p","metadata",result.author));
+  if (result.notice) card.append(el("p","metadata",result.notice));
+  const list = el("div","video-media"), checks = [];
+  result.medias.forEach(media => {
+    const row = el("div","video-media-row"), check = el("input");
+    check.type = "checkbox"; check.checked = true; check.dataset.index = media.index;
+    check.setAttribute("aria-label","选择 "+media.name);
+    row.append(check,icon(media.kind === "image" ? "image" : media.kind === "audio" ? "music" : "film"));
+    row.append(el("span","file-name",media.name+(media.dash ? " · DASH 分轨，自动合轨" : "")),el("span","file-size",size(media.size)));
+    list.append(row); checks.push(check);
+  });
+  const actions = el("div","toolbar");
+  const threads = el("input","threads-input"); threads.type = "number"; threads.min = "0"; threads.max = "128"; threads.value = "0";
+  threads.title = "下载线程覆盖，0 为跟随全局设置"; threads.setAttribute("aria-label","下载线程覆盖，0 为跟随全局设置");
+  const threadsLabel = el("label","threads-field"); threadsLabel.append(el("span","","线程覆盖"),threads);
+  actions.append(threadsLabel);
+  actions.append(command("下载所选","download",async () => {
+    const indexes = checks.filter(c => c.checked).map(c => Number(c.dataset.index));
+    if (!indexes.length) throw new Error("请选择要下载的媒体");
+    await api("video/download",{id:result.id,indexes,threads:Number(threads.value)||0});
+    videoSession = null; root.replaceChildren();
+    await view("tasks"); notice("已加入下载");
+  },"primary"));
+  card.append(list,actions); root.append(card); icons();
+}
 function makeBrowser(kind,result) {
   const state = { kind, result, files:result.files || result.assets || result.repositories || [],
-    stack:[{id:result.directory || "",name:result.title || "根目录"}], selected:new Set(), query:"", sort:"name", layout:"list",page:1 };
+    stack:[{id:result.directory || "",name:result.title || "根目录"}], selected:new Set(), query:"", sort:"name", layout:"list",page:1, threads:0 };
   browsers[kind] = state; buildBrowser(state);
 }
 async function navigate(state,index,file) {
@@ -321,8 +363,9 @@ async function navigate(state,index,file) {
   buildBrowser(state);
 }
 async function downloadFile(state,file) {
-  if (file.url) return api("direct",{url:file.url,filename:file.name});
-  return api(state.kind === "cloud" ? "cloud/download" : "download",{sessionId:state.result.sessionId,fid:file.fid});
+  const threads = state.threads || 0;
+  if (file.url) return api("direct",{url:file.url,filename:file.name,threads});
+  return api(state.kind === "cloud" ? "cloud/download" : "download",{sessionId:state.result.sessionId,fid:file.fid,threads});
 }
 function buildBrowser(state) {
   const root = $(state.kind+"-browser"); root.replaceChildren(); root.className = "file-browser";
@@ -355,6 +398,11 @@ function buildBrowser(state) {
   const selection = el("div","selection-bar"), label = el("label","select-all"), checkbox = el("input");
   checkbox.type = "checkbox"; checkbox.setAttribute("aria-label","选择当前显示的文件");
   label.append(checkbox,el("span","","全选")); selection.append(label);
+  const threads = el("input","threads-input"); threads.type = "number"; threads.min = "0"; threads.max = "128"; threads.value = "0";
+  threads.placeholder = "0"; threads.title = "下载线程覆盖，0 为跟随全局设置"; threads.setAttribute("aria-label","下载线程覆盖，0 为跟随全局设置");
+  threads.addEventListener("input",() => { state.threads = Number(threads.value)||0; });
+  const threadsField = el("label","threads-field"); threadsField.append(el("span","","线程覆盖"),threads);
+  selection.append(threadsField);
   const queue = command("下载所选文件","download",async () => {
     let success = 0; const errors = [];
     for (const file of state.files.filter(f => !f.directory && state.selected.has(f.fid || f.url))) {

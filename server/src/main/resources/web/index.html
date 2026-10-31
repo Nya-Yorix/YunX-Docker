@@ -52,11 +52,17 @@
           <label for="link">分享链接</label><textarea id="link" rows="3" required placeholder="粘贴分享链接或分享文案"></textarea>
           <div class="form-bottom"><div><label for="password">提取码</label><input id="password" maxlength="32" autocomplete="off" placeholder="可留空"></div><button class="primary" type="submit"><i data-lucide="scan-line"></i>解析</button></div>
         </form>
+        <form id="video-form" class="resolve-form">
+          <label for="video-link">视频 / 图文链接<span class="metadata">实验</span></label>
+          <div class="form-bottom"><input id="video-link" required placeholder="支持哔哩哔哩 / 快手 / 微博 / AcFun / 小红书 / Pixiv（抖音需桌面版）"><button class="primary" type="submit"><i data-lucide="clapperboard"></i>解析视频</button></div>
+        </form>
+        <div id="video-result"></div>
         <div id="share-browser"></div>
         <div class="saved-links"><div class="list-toolbar"><h2>保存的链接</h2><div class="segmented" id="library-tabs" role="group" aria-label="保存的链接"><button type="button" data-library="bookmarks" class="active">收藏</button><button type="button" data-library="history">最近解析</button></div></div><div id="library-list"></div></div>
         <details class="direct-section"><summary>添加直链下载</summary><form id="direct-form">
           <label for="direct-url">下载地址</label><input id="direct-url" type="url" required placeholder="https://">
           <label for="direct-name">文件名</label><input id="direct-name" placeholder="可留空">
+          <label for="direct-threads">线程覆盖 · 0 跟随全局设置</label><input id="direct-threads" type="number" min="0" max="128" value="0">
           <button class="secondary" type="submit"><i data-lucide="plus"></i>加入下载</button>
         </form></details>
       </section>

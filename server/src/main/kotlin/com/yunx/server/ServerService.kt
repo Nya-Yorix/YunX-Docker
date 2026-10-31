@@ -44,14 +44,15 @@ class ServerService(
     private val revisions = ConcurrentHashMap<String, Long>()
     private fun quark(): QuarkApi {
         var expected = credentials.credential("QUARK")
-        return QuarkApi().apply { cookieSink = { updated -> credentials.updateCookie("QUARK", expected, updated); expected = updated } }
+        return QuarkApi().apply { cookieSink = { merged, _ -> credentials.updateCookie("QUARK", expected, merged); expected = merged } }
     }
     private fun uc(): UCApi {
         var expected = credentials.credential("UC")
-        return UCApi().apply { cookieSink = { updated -> credentials.updateCookie("UC", expected, updated); expected = updated } }
+        return UCApi().apply { cookieSink = { merged, _ -> credentials.updateCookie("UC", expected, merged); expected = merged } }
     }
     private val github = GitHubApi(tokenProvider = { credentials.get("GITHUB").optString("accessToken") })
     private val githubBrowser = GitHubBrowser(github)
+    val video = VideoService(credentials)
 
     fun exportAccounts(password: String): String = AccountBackup.export(credentials, password)
     fun importAccounts(content: String, password: String): Int {
@@ -64,15 +65,32 @@ class ServerService(
         return values.size
     }
 
-    fun accounts(): JSONArray = JSONArray(SharePlatform.entries.map { p ->
-        JSONObject().put("platform", p.name).put("configured", credentials.credential(p.name).isNotBlank())
-            .put("cloudSupported", p != SharePlatform.GITHUB)
-            .put("authType", if (p == SharePlatform.XUNLEI) credentials.get(p.name).optString("authType") else "")
-            .put("profile", profiles[p.name] ?: JSONObject.NULL)
+    fun accounts(): JSONArray = JSONArray(buildList {
+        SharePlatform.entries.map { p ->
+            JSONObject().put("platform", p.name).put("configured", credentials.credential(p.name).isNotBlank())
+                .put("cloudSupported", p != SharePlatform.GITHUB)
+                .put("authType", if (p == SharePlatform.XUNLEI) credentials.get(p.name).optString("authType") else "")
+                .put("profile", profiles[p.name] ?: JSONObject.NULL)
+        }.forEach { add(it) }
+        video.platforms.forEach { (key, parser) ->
+            add(
+                JSONObject().put("platform", key).put("configured", credentials.credential(key).isNotBlank())
+                    .put("cloudSupported", false).put("authType", "")
+                    .put("label", parser.platform.displayName + "（视频，实验）")
+                    .put("profile", profiles[key] ?: JSONObject.NULL)
+            )
+        }
     })
 
     fun saveAccount(body: JSONObject) {
-        val platform = SharePlatform.valueOf(body.getString("platform"))
+        val requested = body.getString("platform")
+        if (video.platforms.containsKey(requested)) {
+            video.saveCookie(requested, body.optJSONObject("credentials") ?: JSONObject())
+            revisions.merge(requested, 1L, Long::plus)
+            profiles.remove(requested)
+            return
+        }
+        val platform = SharePlatform.valueOf(requested)
         val input = body.getJSONObject("credentials")
         val allowed = setOf("cookie", "accessToken", "refreshToken", "deviceId", "deviceSign", "captchaToken", "authType", "label", "uuid")
         require(input.keySet().all { it in allowed }) { "未知凭证字段" }
@@ -136,7 +154,13 @@ class ServerService(
         return library()
     }
     suspend fun accountInfo(body: JSONObject): JSONObject = withTimeout(25000) {
-        val p = SharePlatform.valueOf(body.getString("platform"))
+        val requested = body.getString("platform")
+        if (video.platforms.containsKey(requested)) {
+            val profile = video.accountInfo(requested)
+            profiles[requested] = profile
+            return profile
+        }
+        val p = SharePlatform.valueOf(requested)
         val c = credentials.credential(p.name)
         val revision = revisions[p.name] ?: 0L
         require(c.isNotBlank()) { "请先添加网盘账号" }
@@ -311,7 +335,7 @@ class ServerService(
             } ?: error("未取得下载地址，请检查账号权限")
             require(s.revision == (revisions[s.platform.name] ?: 0L)) { "账号配置已更新，请重新打开网盘" }
             JSONObject().put("id", downloads.enqueue(link.downloadUrl, f.fname, downloadHeaders(s.platform, link, credentials.credential(s.platform.name)),
-                link.size, s.platform.name.lowercase()))
+                link.size, s.platform.name.lowercase(), threads = video.threadsOf(body)))
         }
     }
 
@@ -389,10 +413,11 @@ class ServerService(
     }
 
     suspend fun enqueue(body: JSONObject): JSONObject {
+        val threads = video.threadsOf(body)
         if (githubBrowser.contains(body.getString("sessionId"))) {
             val file = githubBrowser.download(body.getString("sessionId"), body.getString("fid"))
             return JSONObject().put("id", downloads.enqueue(file.getString("url"), file.getString("name"),
-                emptyMap(), file.optLong("size"), "github"))
+                emptyMap(), file.optLong("size"), "github", threads = threads))
         }
         val s = sessions[body.getString("sessionId")] ?: error("分享会话已失效，请重新解析")
         return s.mutex.withLock {
@@ -413,7 +438,7 @@ class ServerService(
             val latestCredential = credentials.credential(s.platform.name)
             val id = downloads.enqueue(
                 link.downloadUrl, file.fname, downloadHeaders(s.platform, link, latestCredential),
-                link.size, s.platform.name.lowercase(), s.source
+                link.size, s.platform.name.lowercase(), s.source, threads = threads
             ) {
                 link.cleanupDirFid?.let { s.repo.cleanupTempDir(it, latestCredential) }
             }
@@ -426,8 +451,14 @@ class ServerService(
         val uri = URI(url)
         require(uri.scheme in listOf("http", "https") && uri.host != null && uri.userInfo == null) { "请输入 HTTP/HTTPS 下载地址" }
         val name = body.optString("filename").ifBlank { uri.path.substringAfterLast('/').ifBlank { "download" } }
-        return JSONObject().put("id", downloads.enqueue(url, name))
+        return JSONObject().put("id", downloads.enqueue(url, name, threads = video.threadsOf(body)))
     }
+
+    /** 视频解析（实验性）：识别 + 解析，直链留在服务器会话里 */
+    suspend fun video(body: JSONObject): JSONObject = video.parse(body)
+
+    /** 视频下载：按解析会话 + 媒体序号入队 */
+    suspend fun videoDownload(body: JSONObject): JSONObject = video.download(body, downloads)
 
     suspend fun tasks(): JSONArray = JSONArray(downloads.tasks.first().map { t ->
         val stats = downloads.stats.value[t.id]
