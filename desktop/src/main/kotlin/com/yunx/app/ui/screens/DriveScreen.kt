@@ -1,5 +1,6 @@
 package com.yunx.app.ui.screens
 
+import com.yunx.app.ui.theme.animateItemIfAllowed
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -23,8 +24,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.MoreVert
@@ -39,7 +42,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarScrollBehavior
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -62,8 +64,11 @@ import com.yunx.app.data.db.Pan115AccountEntity
 import com.yunx.app.data.db.Pan123AccountEntity
 import com.yunx.app.data.db.QuarkAccountEntity
 import com.yunx.app.data.db.UCAccountEntity
+import com.yunx.app.data.db.VideoAccountEntity
 import com.yunx.app.data.db.XunleiAccountEntity
+import com.yunx.app.data.download.DownloadPlatform
 import com.yunx.app.data.network.model.QuotaInfo
+import com.yunx.app.data.network.video.VideoPlatform
 import com.yunx.app.ui.components.FadeAlertDialog
 import com.yunx.app.ui.viewmodel.BaiduCloudViewModel
 import com.yunx.app.ui.viewmodel.C139CloudViewModel
@@ -71,11 +76,13 @@ import com.yunx.app.ui.viewmodel.DriveQuotaViewModel
 import com.yunx.app.ui.viewmodel.GuangYaCloudViewModel
 import com.yunx.app.ui.viewmodel.ILanzouCloudViewModel
 import com.yunx.app.ui.viewmodel.LanzouCloudViewModel
+import com.yunx.app.ui.viewmodel.MultiAccountViewModel
 import com.yunx.app.ui.viewmodel.Pan115CloudViewModel
 import com.yunx.app.ui.viewmodel.Pan123CloudViewModel
 import com.yunx.app.ui.viewmodel.QuarkCloudViewModel
 import com.yunx.app.ui.viewmodel.UCCoudViewModel
 import com.yunx.app.ui.viewmodel.XunleiCloudViewModel
+import com.yunx.app.util.maskAccountText
 
 /**
  * 网盘账号展示模型。
@@ -160,6 +167,20 @@ fun DriveScreen(
     onGitHubBrowseHome: () -> Unit = {},
     /** 「更多」菜单中清除 Token（二次确认后回调） */
     onGitHubClearToken: () -> Unit = {},
+    /** 多账号：账号列表 / 设主账号 / 改备注 / 退出单个账号 */
+    multiAccount: MultiAccountViewModel,
+    /** 视频解析：各平台登录态（platform → 当前账号） */
+    videoLoginState: Map<VideoPlatform, VideoAccountEntity> = emptyMap(),
+    /** 视频解析：全部平台账号（用于统计「共 N 个账号」） */
+    videoAccounts: List<VideoAccountEntity> = emptyList(),
+    /** 视频平台：打开登录页 */
+    onVideoLogin: (VideoPlatform) -> Unit = {},
+    /** 视频平台：打开账号管理弹窗 */
+    onVideoManage: (VideoPlatform) -> Unit = {},
+    /** 「添加账号」：传入平台常量，由 MainScreen 清网页登录态并打开该平台登录页 */
+    onAddAccount: (String) -> Unit = {},
+    /** 「四宫格（两列）/ 列表」布局：由 MainScreen 顶部栏右上角按钮切换 */
+    gridMode: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     var showQuarkSheet by remember { mutableStateOf(false) }
@@ -199,70 +220,70 @@ fun DriveScreen(
     val quark = DriveAccount(
         id = "quark",
         name = "夸克网盘",
-        description = quarkAccount?.nickname ?: "点击登录，支持解析下载",
+        description = quarkAccount?.nickname?.let { maskAccountText(it) } ?: "点击登录，支持解析下载",
         avatarText = "夸",
         isLoggedIn = quarkAccount != null
     )
     val uc = DriveAccount(
         id = "uc",
         name = "UC网盘",
-        description = ucAccount?.nickname ?: "点击登录，支持解析下载",
+        description = ucAccount?.nickname?.let { maskAccountText(it) } ?: "点击登录，支持解析下载",
         avatarText = "UC",
         isLoggedIn = ucAccount != null
     )
     val xunlei = DriveAccount(
         id = "xunlei",
         name = "迅雷网盘",
-        description = xunleiAccount?.nickname ?: "点击登录，支持解析下载",
+        description = xunleiAccount?.nickname?.let { maskAccountText(it) } ?: "点击登录，支持解析下载",
         avatarText = "迅",
         isLoggedIn = xunleiAccount != null
     )
     val baidu = DriveAccount(
         id = "baidu",
         name = "百度网盘",
-        description = baiduAccount?.nickname ?: "点击登录，支持解析下载",
+        description = baiduAccount?.nickname?.let { maskAccountText(it) } ?: "点击登录，支持解析下载",
         avatarText = "度",
         isLoggedIn = baiduAccount != null
     )
     val c139 = DriveAccount(
         id = "c139",
         name = "139网盘",
-        description = c139Account?.nickname ?: "点击登录，支持解析下载",
+        description = c139Account?.nickname?.let { maskAccountText(it) } ?: "点击登录，支持解析下载",
         avatarText = "139",
         isLoggedIn = c139Account != null
     )
     val pan123 = DriveAccount(
         id = "pan123",
         name = "123云盘",
-        description = pan123Account?.nickname ?: "点击登录，支持解析下载",
+        description = pan123Account?.nickname?.let { maskAccountText(it) } ?: "点击登录，支持解析下载",
         avatarText = "123",
         isLoggedIn = pan123Account != null
     )
     val pan115 = DriveAccount(
         id = "pan115",
         name = "115网盘",
-        description = pan115Account?.nickname ?: "点击登录，支持解析下载",
+        description = pan115Account?.nickname?.let { maskAccountText(it) } ?: "点击登录，支持解析下载",
         avatarText = "115",
         isLoggedIn = pan115Account != null
     )
     val guangya = DriveAccount(
         id = "guangya",
         name = "光鸭云盘",
-        description = guangyaAccount?.nickname ?: "点击登录，支持解析下载",
+        description = guangyaAccount?.nickname?.let { maskAccountText(it) } ?: "点击登录，支持解析下载",
         avatarText = "光",
         isLoggedIn = guangyaAccount != null
     )
     val ilanzou = DriveAccount(
         id = "ilanzou",
         name = "蓝奏云优享版",
-        description = ilanzouAccount?.nickname ?: "点击登录，支持解析下载",
+        description = ilanzouAccount?.nickname?.let { maskAccountText(it) } ?: "点击登录，支持解析下载",
         avatarText = "优",
         isLoggedIn = ilanzouAccount != null
     )
     val lanzou = DriveAccount(
         id = "lanzou",
         name = "蓝奏云",
-        description = lanzouAccount?.nickname ?: "点击登录，支持解析下载",
+        description = lanzouAccount?.nickname?.let { maskAccountText(it) } ?: "点击登录，支持解析下载",
         avatarText = "蓝",
         isLoggedIn = lanzouAccount != null
     )
@@ -282,9 +303,6 @@ fun DriveScreen(
     LaunchedEffect(Unit) {
         driveQuotaViewModel.loadAll()
     }
-    // 下拉刷新状态：绑定空间配额加载中状态
-    val isRefreshing by driveQuotaViewModel.loading.collectAsState()
-
     // 账号列表 ↔ 夸克云盘 ↔ UC 云盘 ↔ 迅雷云盘 ↔ 百度云盘 ↔ 139 云盘 ↔ 123 云盘：平滑过渡（淡入 + 轻微缩放，不僵硬）
     AnimatedContent(
         targetState = when {
@@ -367,19 +385,17 @@ fun DriveScreen(
             onExit = { showLanzouCloud = false },
             onDownloadStarted = onDownloadStarted
         )
-            else -> PullToRefreshBox(
-                isRefreshing = isRefreshing,
-                onRefresh = { driveQuotaViewModel.loadAll() },
-                modifier = Modifier.fillMaxSize()
-            ) {
-                LazyColumn(
+            else -> LazyVerticalGrid(
+                // 四宫格 = 两列；列表 = 单列。切换列数复用同一棵列表，卡片状态不丢。
+                columns = GridCells.Fixed(if (gridMode) 2 else 1),
                 modifier = modifier
                     .fillMaxSize()
                     .nestedScroll(scrollBehavior.nestedScrollConnection),
                 contentPadding = PaddingValues(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                item {
+                item(key = "hint", span = { GridItemSpan(maxLineSpan) }) {
                     Text(
                         text = "登录后即可自动携带凭证解析与下载",
                         style = MaterialTheme.typography.bodyMedium,
@@ -548,7 +564,7 @@ fun DriveScreen(
                     )
                 }
                 items(others, key = { it.id }) { account ->
-                    DriveAccountCard(account = account)
+                    DriveAccountCard(account = account, modifier = animateItemIfAllowed())
                 }
                 item(key = github.id) {
                     // GitHub：已配置 Token 点击主体进入「我的主页」；未配置打开 Token 弹窗；更多按钮在登录后显示
@@ -558,126 +574,194 @@ fun DriveScreen(
                         onMoreClick = if (githubHasToken) { { showGitHubSheet = true } } else null
                     )
                 }
-            }
+                // ---- 视频解析：各平台登录态与账号管理（与网盘区共用同一套卡片版式）----
+                item(key = "video_header", span = { GridItemSpan(maxLineSpan) }) {
+                    Text(
+                        text = "视频解析",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp, start = 4.dp)
+                    )
+                }
+                item(key = "video_section", span = { GridItemSpan(maxLineSpan) }) {
+                    VideoAccountSection(
+                        loginState = videoLoginState,
+                        accounts = videoAccounts,
+                        // 跟随网盘卡片的列数：四宫格时视频平台也排两列，否则切换模式只有上面变了
+                        columns = if (gridMode) 2 else 1,
+                        onLogin = onVideoLogin,
+                        onManage = onVideoManage
+                    )
+                }
             }
         }
     }
 
-    // 已登录夸克：点击卡片弹出账号信息底部弹窗
+    // 已登录夸克：点击卡片弹出账号信息底部弹窗（多账号）
     if (showQuarkSheet && quarkAccount != null) {
+        val accounts by multiAccount.accountsOf(DownloadPlatform.QUARK).collectAsState()
         QuarkAccountSheet(
             account = quarkAccount,
-            onLogout = {
-                onQuarkLogout()
+            accounts = accounts,
+            onSetPrimary = { multiAccount.setPrimary(DownloadPlatform.QUARK, it) },
+            onRename = { id, remark -> multiAccount.rename(DownloadPlatform.QUARK, id, remark) },
+            onRemove = { multiAccount.remove(DownloadPlatform.QUARK, it) },
+            onAddAccount = {
                 showQuarkSheet = false
+                onAddAccount(DownloadPlatform.QUARK)
             },
             onDismiss = { showQuarkSheet = false }
         )
     }
 
-    // 已登录 UC：点击卡片弹出账号信息底部弹窗
+    // 已登录 UC：点击卡片弹出账号信息底部弹窗（多账号）
     if (showUCSheet && ucAccount != null) {
+        val accounts by multiAccount.accountsOf(DownloadPlatform.UC).collectAsState()
         UCAccountSheet(
             account = ucAccount,
-            onLogout = {
-                onUCLogout()
+            accounts = accounts,
+            onSetPrimary = { multiAccount.setPrimary(DownloadPlatform.UC, it) },
+            onRename = { id, remark -> multiAccount.rename(DownloadPlatform.UC, id, remark) },
+            onRemove = { multiAccount.remove(DownloadPlatform.UC, it) },
+            onAddAccount = {
                 showUCSheet = false
+                onAddAccount(DownloadPlatform.UC)
             },
             onDismiss = { showUCSheet = false }
         )
     }
 
-    // 已登录迅雷：点击卡片弹出账号信息底部弹窗
+    // 已登录迅雷：点击卡片弹出账号信息底部弹窗（多账号）
     if (showXunleiSheet && xunleiAccount != null) {
+        val accounts by multiAccount.accountsOf(DownloadPlatform.XUNLEI).collectAsState()
         XunleiAccountSheet(
             account = xunleiAccount,
-            onLogout = {
-                onXunleiLogout()
+            accounts = accounts,
+            onSetPrimary = { multiAccount.setPrimary(DownloadPlatform.XUNLEI, it) },
+            onRename = { id, remark -> multiAccount.rename(DownloadPlatform.XUNLEI, id, remark) },
+            onRemove = { multiAccount.remove(DownloadPlatform.XUNLEI, it) },
+            onAddAccount = {
                 showXunleiSheet = false
+                onAddAccount(DownloadPlatform.XUNLEI)
             },
             onDismiss = { showXunleiSheet = false }
         )
     }
 
-    // 已登录百度：点击卡片弹出账号信息底部弹窗
+    // 已登录百度：点击卡片弹出账号信息底部弹窗（多账号）
     if (showBaiduSheet && baiduAccount != null) {
+        val accounts by multiAccount.accountsOf(DownloadPlatform.BAIDU).collectAsState()
         BaiduAccountSheet(
             account = baiduAccount,
-            onLogout = {
-                onBaiduLogout()
+            accounts = accounts,
+            onSetPrimary = { multiAccount.setPrimary(DownloadPlatform.BAIDU, it) },
+            onRename = { id, remark -> multiAccount.rename(DownloadPlatform.BAIDU, id, remark) },
+            onRemove = { multiAccount.remove(DownloadPlatform.BAIDU, it) },
+            onAddAccount = {
                 showBaiduSheet = false
+                onAddAccount(DownloadPlatform.BAIDU)
             },
             onDismiss = { showBaiduSheet = false }
         )
     }
 
-    // 已登录 139：点击卡片弹出账号信息底部弹窗
+    // 已登录 139：点击卡片弹出账号信息底部弹窗（多账号）
     if (showC139Sheet && c139Account != null) {
+        val accounts by multiAccount.accountsOf(DownloadPlatform.C139).collectAsState()
         C139AccountSheet(
             account = c139Account,
-            onLogout = {
-                onC139Logout()
+            accounts = accounts,
+            onSetPrimary = { multiAccount.setPrimary(DownloadPlatform.C139, it) },
+            onRename = { id, remark -> multiAccount.rename(DownloadPlatform.C139, id, remark) },
+            onRemove = { multiAccount.remove(DownloadPlatform.C139, it) },
+            onAddAccount = {
                 showC139Sheet = false
+                onAddAccount(DownloadPlatform.C139)
             },
             onDismiss = { showC139Sheet = false }
         )
     }
 
-    // 已登录 123：点击卡片弹出账号信息底部弹窗
+    // 已登录 123：点击卡片弹出账号信息底部弹窗（多账号）
     if (showPan123Sheet && pan123Account != null) {
+        val accounts by multiAccount.accountsOf(DownloadPlatform.PAN123).collectAsState()
         Pan123AccountSheet(
             account = pan123Account,
-            onLogout = {
-                onPan123Logout()
+            accounts = accounts,
+            onSetPrimary = { multiAccount.setPrimary(DownloadPlatform.PAN123, it) },
+            onRename = { id, remark -> multiAccount.rename(DownloadPlatform.PAN123, id, remark) },
+            onRemove = { multiAccount.remove(DownloadPlatform.PAN123, it) },
+            onAddAccount = {
                 showPan123Sheet = false
+                onAddAccount(DownloadPlatform.PAN123)
             },
             onDismiss = { showPan123Sheet = false }
         )
     }
 
-    // 已登录 115：点击卡片弹出账号信息底部弹窗
+    // 已登录 115：点击卡片弹出账号信息底部弹窗（多账号）
     if (showPan115Sheet && pan115Account != null) {
+        val accounts by multiAccount.accountsOf(DownloadPlatform.PAN115).collectAsState()
         Pan115AccountSheet(
             account = pan115Account,
-            onLogout = {
-                onPan115Logout()
+            accounts = accounts,
+            onSetPrimary = { multiAccount.setPrimary(DownloadPlatform.PAN115, it) },
+            onRename = { id, remark -> multiAccount.rename(DownloadPlatform.PAN115, id, remark) },
+            onRemove = { multiAccount.remove(DownloadPlatform.PAN115, it) },
+            onAddAccount = {
                 showPan115Sheet = false
+                onAddAccount(DownloadPlatform.PAN115)
             },
             onDismiss = { showPan115Sheet = false }
         )
     }
 
-    // 已登录光鸭云盘：点击卡片弹出账号信息底部弹窗
+    // 已登录光鸭云盘：点击卡片弹出账号信息底部弹窗（多账号）
     if (showGuangYaSheet && guangyaAccount != null) {
+        val accounts by multiAccount.accountsOf(DownloadPlatform.GUANGYA).collectAsState()
         GuangYaAccountSheet(
             account = guangyaAccount,
-            onLogout = {
-                onGuangYaLogout()
+            accounts = accounts,
+            onSetPrimary = { multiAccount.setPrimary(DownloadPlatform.GUANGYA, it) },
+            onRename = { id, remark -> multiAccount.rename(DownloadPlatform.GUANGYA, id, remark) },
+            onRemove = { multiAccount.remove(DownloadPlatform.GUANGYA, it) },
+            onAddAccount = {
                 showGuangYaSheet = false
+                onAddAccount(DownloadPlatform.GUANGYA)
             },
             onDismiss = { showGuangYaSheet = false }
         )
     }
 
-    // 已登录蓝奏云优享版：点击卡片弹出账号信息底部弹窗
+    // 已登录蓝奏云优享版：点击卡片弹出账号信息底部弹窗（多账号）
     if (showILanzouSheet && ilanzouAccount != null) {
+        val accounts by multiAccount.accountsOf(DownloadPlatform.ILANZOU).collectAsState()
         ILanzouAccountSheet(
             account = ilanzouAccount,
-            onLogout = {
-                onILanzouLogout()
+            accounts = accounts,
+            onSetPrimary = { multiAccount.setPrimary(DownloadPlatform.ILANZOU, it) },
+            onRename = { id, remark -> multiAccount.rename(DownloadPlatform.ILANZOU, id, remark) },
+            onRemove = { multiAccount.remove(DownloadPlatform.ILANZOU, it) },
+            onAddAccount = {
                 showILanzouSheet = false
+                onAddAccount(DownloadPlatform.ILANZOU)
             },
             onDismiss = { showILanzouSheet = false }
         )
     }
 
-    // 已登录蓝奏云：点击卡片弹出账号信息底部弹窗
+    // 已登录蓝奏云：点击卡片弹出账号信息底部弹窗（多账号）
     if (showLanzouSheet && lanzouAccount != null) {
+        val accounts by multiAccount.accountsOf(DownloadPlatform.LANZOU).collectAsState()
         LanzouAccountSheet(
             account = lanzouAccount,
-            onLogout = {
-                onLanzouLogout()
+            accounts = accounts,
+            onSetPrimary = { multiAccount.setPrimary(DownloadPlatform.LANZOU, it) },
+            onRename = { id, remark -> multiAccount.rename(DownloadPlatform.LANZOU, id, remark) },
+            onRemove = { multiAccount.remove(DownloadPlatform.LANZOU, it) },
+            onAddAccount = {
                 showLanzouSheet = false
+                onAddAccount(DownloadPlatform.LANZOU)
             },
             onDismiss = { showLanzouSheet = false }
         )
@@ -726,6 +810,7 @@ fun DriveScreen(
 @Composable
 private fun DriveAccountCard(
     account: DriveAccount,
+    modifier: Modifier = Modifier,
     /** 网盘空间详情（已登录且有数据时在卡片内显示进度条）；null 不显示 */
     quota: QuotaInfo? = null,
     onClick: (() -> Unit)? = null,
@@ -748,13 +833,13 @@ private fun DriveAccountCard(
     if (onClick != null) {
         Card(
             onClick = onClick,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = modifier.fillMaxWidth(),
             shape = cardShape,
             colors = cardColors
         ) { content() }
     } else {
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = modifier.fillMaxWidth(),
             shape = cardShape,
             colors = cardColors
         ) { content() }
@@ -774,9 +859,9 @@ private fun DriveAccountCardContent(
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 品牌头像（暂用首字母，后续可替换为品牌图标）
+        // 品牌头像（暂用首字母，后续可替换为品牌图标）；尺寸与视频平台 Logo 对齐（#185：48→40dp）
         Surface(
-            modifier = Modifier.size(48.dp),
+            modifier = Modifier.size(40.dp),
             shape = CircleShape,
             color = if (account.isLoggedIn) {
                 MaterialTheme.colorScheme.primaryContainer

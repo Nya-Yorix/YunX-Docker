@@ -2,6 +2,8 @@ package com.yunx.app.ui.screens
 
 import com.yunx.app.ui.SnackbarController
 import com.yunx.app.ui.BackHandler
+import com.yunx.app.ui.theme.Motion
+import com.yunx.app.ui.theme.animateItemIfAllowed
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -9,7 +11,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,6 +33,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.DriveFileMove
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -44,7 +46,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarScrollBehavior
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -120,7 +121,8 @@ fun CloudDriveScreen(
         DownloadLinkDialog(
             link = link,
             onDownload = { viewModel.startDownload() },
-            onDismiss = { viewModel.dismissDownloadDialog() }
+            onDismiss = { viewModel.dismissDownloadDialog() },
+            saveDir = viewModel.pendingSaveDir.takeIf { it.isNotBlank() }
         )
     }
 
@@ -133,7 +135,7 @@ fun CloudDriveScreen(
         AnimatedContent(
             targetState = state,
             transitionSpec = {
-                fadeIn(tween(200)) togetherWith fadeOut(tween(140))
+                Motion.fade(200, 140)
             },
             label = "cloudState"
         ) { s ->
@@ -166,11 +168,6 @@ fun CloudDriveScreen(
             }
 
             is QuarkCloudUiState.Loaded -> Box(modifier = Modifier.fillMaxSize()) {
-                PullToRefreshBox(
-                    isRefreshing = viewModel.refreshing,
-                    onRefresh = { viewModel.refresh() },
-                    modifier = Modifier.fillMaxSize()
-                ) {
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
@@ -231,6 +228,9 @@ fun CloudDriveScreen(
                                     tint = MaterialTheme.colorScheme.primary
                                 )
                             }
+                            IconButton(onClick = { viewModel.refresh() }) {
+                                Icon(imageVector = Icons.Outlined.Refresh, contentDescription = "刷新")
+                            }
                         }
                     }
                     // 可点击面包屑（多选模式下隐藏）
@@ -268,7 +268,7 @@ fun CloudDriveScreen(
             items(s.files, key = { it.fid }) { file ->
                 ShareFileRow(
                     file = file,
-                    modifier = Modifier.animateItem(),
+                    modifier = animateItemIfAllowed(),
                     onClick = {
                         if (viewModel.multiSelectMode) {
                             viewModel.toggleSelect(file)
@@ -278,14 +278,14 @@ fun CloudDriveScreen(
                             viewModel.openActions(file)
                         }
                     },
-                    // 多选模式：隐藏行尾按钮；非多选时文件夹显示「更多」、全部可长按进入多选
-                    onMore = if (!viewModel.multiSelectMode && file.isdir) {
+                    // 多选模式：隐藏行尾按钮；非多选时全部显示「更多」，右键打开操作菜单
+                    onMore = if (!viewModel.multiSelectMode) {
                         { viewModel.openActions(file) }
                     } else {
                         null
                     },
-                    onLongClick = if (!viewModel.multiSelectMode) {
-                        { viewModel.enterMultiSelect(file) }
+                    onContextMenu = if (!viewModel.multiSelectMode) {
+                        { viewModel.openActions(file) }
                     } else {
                         null
                     },
@@ -313,6 +313,7 @@ fun CloudDriveScreen(
                     modifier = Modifier.align(Alignment.BottomCenter)
                 ) {
                     MultiSelectBar(
+                        busy = viewModel.isOperating,
                         count = viewModel.selected.size,
                         actions = listOf(
                             MultiSelectAction("下载", Icons.Outlined.Download, MaterialTheme.colorScheme.primary) {
@@ -333,7 +334,6 @@ fun CloudDriveScreen(
                         )
                     )
                 }
-            }
         }
     }
     }
@@ -344,6 +344,10 @@ fun CloudDriveScreen(
         FileActionSheet(
             file = file,
             viewModel = viewModel,
+            onMultiSelect = {
+                viewModel.dismissActions()
+                viewModel.enterMultiSelect(file)
+            },
             onDismiss = { viewModel.dismissActions() }
         )
     }

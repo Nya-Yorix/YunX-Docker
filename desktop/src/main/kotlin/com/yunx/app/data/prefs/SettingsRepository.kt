@@ -1,5 +1,6 @@
 package com.yunx.app.data.prefs
 
+import com.yunx.app.AppContext
 import com.yunx.app.data.download.DownloadPlatform
 import java.util.prefs.Preferences
 
@@ -8,7 +9,7 @@ import java.util.prefs.Preferences
  */
 class SettingsRepository {
 
-    private val prefs: Preferences = Preferences.userRoot().node("${System.getProperty("yunx.preferenceRoot", "yunx")}/settings")
+    private val prefs: Preferences = AppContext.settingsPrefs
 
     /** 下载线程数（通用/手动添加，分片并发数），默认 32，上限 512 */
     var downloadThreads: Int
@@ -37,6 +38,15 @@ class SettingsRepository {
         get() = prefs.get("download_dir_uri", null)
         set(value) {
             if (value.isNullOrBlank()) prefs.remove("download_dir_uri") else prefs.put("download_dir_uri", value)
+        }
+
+    /** 浏览器插件劫持弹窗上次选择的保存目录（空串 = 跟随上面的全局保存目录） */
+    var browserHookLastSaveDir: String
+        get() = prefs.get("browser_hook_last_save_dir", "")
+        set(value) {
+            val v = value.trim()
+            if (v.isEmpty()) prefs.remove("browser_hook_last_save_dir")
+            else prefs.put("browser_hook_last_save_dir", v)
         }
 
     /**
@@ -113,6 +123,54 @@ class SettingsRepository {
         }
 
     /**
+     * 下载调试（设置 → 关于云析 → 长按 → 开发调试）：默认关。
+     * 开启后按下载任务记录事件流（主要变更节点 / 错误节点），下载页右键任务可进「调试信息」页查看并导出；
+     * **关闭会清空全部日志**（见 `DownloadDebugLog`），所以设置页关开关前有二次确认弹窗。
+     */
+    var downloadDebug: Boolean
+        get() = prefs.getBoolean("download_debug", false)
+        set(value) {
+            prefs.putBoolean("download_debug", value)
+        }
+
+    /**
+     * 全量 SHA-256 校验（开发调试菜单，**默认关**）：开启后保存文件时顺带算出整文件摘要，
+     * 写进下载调试日志（「全量校验」事件）。合并那一遍本来就在读所有字节，所以不额外读盘，只多一点 CPU。
+     */
+    var fullFileSha256: Boolean
+        get() = prefs.getBoolean("download_full_sha256", false)
+        set(value) {
+            prefs.putBoolean("download_full_sha256", value)
+        }
+
+    /**
+     * 储存目录（设置 → 储存目录）：目录配置本身必须存在 Preferences 里（而不是数据目录里），
+     * 否则把数据目录搬走后就再也读不到「该去哪找数据」。**改动需重启生效**（启动时只读一次）。
+     */
+    var storageDbDir: String?
+        get() = prefs.get(AppContext.KEY_DB_DIR, null)?.takeIf { it.isNotBlank() }
+        set(value) {
+            if (value.isNullOrBlank()) prefs.remove(AppContext.KEY_DB_DIR) else prefs.put(AppContext.KEY_DB_DIR, value)
+        }
+
+    /** 缓存根目录（下载分片 / 合并临时文件 / JCEF 浏览器数据）；null = 默认 `<数据目录>/cache` */
+    var storageCacheDir: String?
+        get() = prefs.get(AppContext.KEY_CACHE_DIR, null)?.takeIf { it.isNotBlank() }
+        set(value) {
+            if (value.isNullOrBlank()) prefs.remove(AppContext.KEY_CACHE_DIR) else prefs.put(AppContext.KEY_CACHE_DIR, value)
+        }
+
+    /**
+     * 数据库加密等级（设置 → 储存目录 → 数据库加密等级）：键值为 [com.yunx.app.data.security.DbEncryptionLevel.id]，
+     * 默认 `normal`（普通：密钥用本机派生密钥包裹）。改档只重新包裹 32 字节主密钥，不碰库里数据。
+     */
+    var dbEncryptionLevel: String
+        get() = prefs.get("db_encryption_level", "normal")
+        set(value) {
+            prefs.put("db_encryption_level", value)
+        }
+
+    /**
      * 关闭主窗口时的行为：
      * - "ask"：每次询问（默认）
      * - "exit"：直接退出
@@ -159,6 +217,16 @@ class SettingsRepository {
             prefs.putInt("theme_color_mode", value.coerceIn(0, 2))
         }
 
+    /**
+     * 「减少动画」开关（设置 → 主题与外观 → 动效）：默认关。
+     * 开启后关闭页面切换位移、列表增删等装饰性动画（与软件渲染判定取「或」，见 MotionPolicy）。
+     */
+    var reduceMotion: Boolean
+        get() = prefs.getBoolean("reduce_motion", false)
+        set(value) {
+            prefs.putBoolean("reduce_motion", value)
+        }
+
     /** 自定义主题种子色（ARGB 值） */
     var themeSeedColor: Long
         get() = prefs.getLong("theme_seed_color", DEFAULT_SEED_COLOR)
@@ -167,13 +235,27 @@ class SettingsRepository {
         }
 
     /**
-     * 自定义 GitHub 下载镜像前缀（如 "https://gh.dpik.top/"）。
-     * null/空字符串表示使用内置默认镜像（UpdateChecker.MIRROR_PREFIX）。
+     * 固定使用的 GitHub 下载镜像前缀（预选镜像或用户自定义，如 "https://gh.dpik.top/"）。
+     * null/空字符串表示「自动」：由 GitHubMirror 实测各预选镜像、选最快的一个。
      */
     var githubMirrorPrefix: String?
         get() = prefs.get("github_mirror_prefix", null)
         set(value) {
             if (value.isNullOrBlank()) prefs.remove("github_mirror_prefix") else prefs.put("github_mirror_prefix", value)
+        }
+
+    /** 最近一次镜像测速得到的最快前缀（缓存，避免每次启动都重新测速）；null 表示尚未测过 */
+    var githubMirrorFastest: String?
+        get() = prefs.get("github_mirror_fastest", null)
+        set(value) {
+            if (value.isNullOrBlank()) prefs.remove("github_mirror_fastest") else prefs.put("github_mirror_fastest", value)
+        }
+
+    /** 最近一次镜像测速完成的时间戳（毫秒）；0 表示从未测过 */
+    var githubMirrorProbedAt: Long
+        get() = prefs.getLong("github_mirror_probed_at", 0L)
+        set(value) {
+            prefs.putLong("github_mirror_probed_at", value)
         }
 
     /**
@@ -269,6 +351,28 @@ class SettingsRepository {
             )
         }
 
+    /**
+     * 实验性：单线程直写。
+     * 线程数为 1 时不再写缓存分片，直接写目标目录的 `.yunx-*.part`，完成后改名。
+     * 目标盘峰值从「分片 + 成品」降为 1 份，缓存盘占用为 0。
+     */
+    var directWriteSingleThread: Boolean
+        get() = prefs.getBoolean("direct_write_single_thread", DEFAULT_DIRECT_WRITE_SINGLE_THREAD)
+        set(value) {
+            prefs.putBoolean("direct_write_single_thread", value)
+        }
+
+    /**
+     * 实验性：多线程直写。
+     * 线程数 > 1 时预分配目标目录的单个 `.yunx-*.part`，各线程按字节偏移写入；
+     * 进度由同目录的 `.plan` / `.done` 清单维护，完成后校验并改名。
+     */
+    var directWriteMultiThread: Boolean
+        get() = prefs.getBoolean("direct_write_multi_thread", DEFAULT_DIRECT_WRITE_MULTI_THREAD)
+        set(value) {
+            prefs.putBoolean("direct_write_multi_thread", value)
+        }
+
     /** 主页快捷方式（默认关）：开启后在解析页以横向快捷方式展示收藏，点击直达解析 */
     var homeShortcutEnabled: Boolean
         get() = prefs.getBoolean("home_shortcut_enabled", false)
@@ -292,8 +396,78 @@ class SettingsRepository {
         }
 
     /**
+     * 多账号下载（**实验性**，代号 C1）：默认关。
+     *
+     * 开启后，同一个网盘登录了多个账号时，批量下载会把每个文件轮换交给不同账号去取直链，
+     * 绕开单账号的并发数 / 限速限制（每个文件仍只用一个账号下载）。
+     * ★ 只有「账号列表里不止一个账号」的平台才有实际效果；开启前设置页有二次风险确认。
+     */
+    var multiAccountDownload: Boolean
+        get() = prefs.getBoolean("multi_account_download", false)
+        set(value) {
+            prefs.putBoolean("multi_account_download", value)
+        }
+
+    /**
+     * 单文件多源分片（**实验性**，代号 C2）：默认关，**依赖 [multiAccountDownload]**。
+     *
+     * 开启后，同一个文件用多个账号各取一条直链，分片轮流交给不同直链下载（真正提速单个大文件）。
+     * 目前只覆盖夸克 / UC / 迅雷；其他平台即使开着也退回单源。
+     * ★ 关掉 C1 时必须一起关掉它（设置页与读取处都按「C1 关 ⇒ C2 无效」处理），
+     *   否则会出现「多账号下载关了、单文件还在多账号取链」的不一致状态。
+     */
+    var multiSourceDownload: Boolean
+        get() = prefs.getBoolean("multi_source_download", false)
+        set(value) {
+            prefs.putBoolean("multi_source_download", value)
+        }
+
+    /** C2 是否真正生效：开关开着且 C1 也开着（C2 依赖 C1，见 [multiSourceDownload]） */
+    fun multiSourceActive(): Boolean = multiAccountDownload && multiSourceDownload
+
+    /** 关闭 C1 时强制关掉 C2（C2 依赖 C1）：设置页切 C1 与读取端都用这一处口径 */
+    fun disableMultiSource() {
+        prefs.putBoolean("multi_source_download", false)
+    }
+
+    /**
+     * 视频预览引擎选择（见「设置 → 引擎管理 → 视频预览引擎」）：
+     * - [PREVIEW_AUTO]（默认）：能拿到 ffplay 就优先用（真·在线预览），否则回退内置 JavaFX；
+     * - [PREVIEW_JAVA_FX]：始终用内置 JavaFX `MediaView`（需先落盘，兼容性最好）；
+     * - [PREVIEW_FFPLAY]：强制用 ffplay 子进程（缺失时会提示下载 ffmpeg）。
+     * 非法值（手改偏好）一律按自动处理。
+     */
+    var previewEngine: String
+        get() = when (prefs.get("preview_engine", PREVIEW_AUTO)) {
+            PREVIEW_JAVA_FX -> PREVIEW_JAVA_FX
+            PREVIEW_FFPLAY -> PREVIEW_FFPLAY
+            else -> PREVIEW_AUTO
+        }
+        set(value) {
+            prefs.put(
+                "preview_engine",
+                when (value) {
+                    PREVIEW_JAVA_FX -> PREVIEW_JAVA_FX
+                    PREVIEW_FFPLAY -> PREVIEW_FFPLAY
+                    else -> PREVIEW_AUTO
+                }
+            )
+        }
+
+    /**
+     * 是否已提醒过用户安装 ffmpeg 引擎（视频预览与 DASH 合轨共用同一标记）。
+     * 首次遇到「缺引擎」时弹一次提示，之后不再自动打扰；用户后来装了引擎会自动启用。
+     */
+    var ffmpegEngineAsked: Boolean
+        get() = prefs.getBoolean("ffmpeg_engine_asked", false)
+        set(value) {
+            prefs.putBoolean("ffmpeg_engine_asked", value)
+        }
+
+    /**
      * 重置「实验性功能」页全部设置为默认值：
-     * HTTP/2 关闭、读缓冲 64KB、慢连接抢占开启（12KB/s、15s）、主页快捷方式关闭。
+     * HTTP/2 关闭、读缓冲 64KB、慢连接抢占开启（12KB/s、15s）、主页快捷方式关闭、
+     * 多账号下载 / 单文件多源分片关闭。
      * 运行时同步（HttpClients.setHttp2Enabled / DownloadTuning.applyFrom）由调用方负责。
      */
     fun resetExperimentalFeatures() {
@@ -302,7 +476,11 @@ class SettingsRepository {
         slowPreemptEnabled = DEFAULT_SLOW_PREEMPT_ENABLED
         slowPreemptMinBps = DEFAULT_SLOW_PREEMPT_MIN_BPS
         slowPreemptMinAgeMs = DEFAULT_SLOW_PREEMPT_MIN_AGE_MS
+        directWriteSingleThread = DEFAULT_DIRECT_WRITE_SINGLE_THREAD
+        directWriteMultiThread = DEFAULT_DIRECT_WRITE_MULTI_THREAD
         homeShortcutEnabled = false
+        multiAccountDownload = false
+        multiSourceDownload = false
     }
 
     /** 归一化代理模式：非法值一律回退为直连 */
@@ -331,6 +509,13 @@ class SettingsRepository {
         /** 下载引擎：外部 Gopeed 引擎（exe 子进程 + 本地 HTTP API） */
         const val ENGINE_GOPEED = "gopeed"
 
+        /** 预览引擎：自动（有 ffplay 就用，否则回退内置 JavaFX）—— 默认 */
+        const val PREVIEW_AUTO = "auto"
+        /** 预览引擎：内置 JavaFX MediaView（需先落盘，兼容性最好） */
+        const val PREVIEW_JAVA_FX = "javafx"
+        /** 预览引擎：ffplay 子进程（真·在线预览，需 ffmpeg） */
+        const val PREVIEW_FFPLAY = "ffplay"
+
         const val DEFAULT_DOWNLOAD_THREADS = 32
         const val MAX_DOWNLOAD_THREADS = 512
         const val XUNLEI_DOWNLOAD_THREADS = 8
@@ -340,6 +525,10 @@ class SettingsRepository {
 
         /** HTTP/2 默认关闭（与现状一致：仅使用 HTTP/1.1） */
         const val DEFAULT_HTTP2_ENABLED = false
+
+        /** 实验性直写默认关闭：默认仍走缓存分片 + 合并，保证现有行为不变 */
+        const val DEFAULT_DIRECT_WRITE_SINGLE_THREAD = false
+        const val DEFAULT_DIRECT_WRITE_MULTI_THREAD = false
 
         /**
          * 下载读缓冲默认 64KB（与 ChunkDownloader.BUFFER_SIZE 一致，保证默认行为不变）。

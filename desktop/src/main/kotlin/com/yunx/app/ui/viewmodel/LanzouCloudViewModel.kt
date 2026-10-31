@@ -80,6 +80,10 @@ class LanzouCloudViewModel(
         private set
     private var pendingDownload: PendingDownload? = null
 
+    /** 当前待确认下载的保存目录（空串 = 跟随全局设置）；下载弹窗展示用 */
+    var pendingSaveDir by mutableStateOf("")
+        private set
+
     private val dirStack = ArrayDeque<String>()
     private val nameStack = ArrayDeque<String>()
 
@@ -268,7 +272,7 @@ class LanzouCloudViewModel(
         files.forEach { out.add(Triple(it, "$prefix/${it.fname}", info)) }
     }
 
-    fun downloadFolder() {
+    fun downloadFolder(saveDir: String = "") {
         val folder = actionFile ?: return
         if (!folder.isdir) return
         viewModelScope.launch {
@@ -296,7 +300,8 @@ class LanzouCloudViewModel(
                             fileName = relPath,
                             size = link.size,
                             platform = DownloadPlatform.LANZOU,
-                            headers = downloadHeaders(link.downloadUrl)
+                            headers = downloadHeaders(link.downloadUrl),
+                            saveDir = saveDir
                         )
                         okCount++
                     }
@@ -319,17 +324,24 @@ class LanzouCloudViewModel(
     }
 
     /** 下载文件：取直链 → 弹下载确认弹窗（确认后入队） */
-    fun downloadFile() {
+    fun downloadFile() = beginDownload("")
+
+    /** 下载到指定目录：单次覆盖保存目录，不改全局设置 */
+    fun downloadFileTo(saveDir: String) = beginDownload(saveDir)
+
+    private fun beginDownload(saveDir: String) {
         val file = actionFile ?: return
         viewModelScope.launch {
             isOperating = true
             try {
                 val cred = creds()
                 val link = api.getPersonalDownloadLink(cred.cookie, cred.uid, cred.vei, fileNumeric(file.fid), file.fname)
+                pendingSaveDir = saveDir
                 pendingDownload = PendingDownload(
                     url = link.downloadUrl,
                     fileName = file.fname.ifBlank { link.filename },
                     size = link.size,
+                    saveDir = saveDir,
                     headers = downloadHeaders(link.downloadUrl)
                 )
                 downloadLink = link
@@ -346,6 +358,7 @@ class LanzouCloudViewModel(
         val pd = pendingDownload ?: return
         downloadLink = null
         pendingDownload = null
+        pendingSaveDir = ""
         viewModelScope.launch {
             isOperating = true
             try {
@@ -354,7 +367,8 @@ class LanzouCloudViewModel(
                     fileName = pd.fileName,
                     size = pd.size,
                     platform = DownloadPlatform.LANZOU,
-                    headers = pd.headers
+                    headers = pd.headers,
+                    saveDir = pd.saveDir
                 )
                 cloudMessage = "已加入下载：${pd.fileName}"
                 actionFile = null
@@ -370,6 +384,7 @@ class LanzouCloudViewModel(
     fun dismissDownloadDialog() {
         downloadLink = null
         pendingDownload = null
+        pendingSaveDir = ""
     }
 
     // ---------- 单文件操作 ----------
@@ -485,7 +500,7 @@ class LanzouCloudViewModel(
 
     // ---------- 批量操作 ----------
 
-    fun downloadSelected() {
+    fun downloadSelected(saveDir: String = "") {
         val files = _selected.toList()
         if (files.isEmpty()) return
         viewModelScope.launch {
@@ -525,7 +540,8 @@ class LanzouCloudViewModel(
                             fileName = if (relPath.contains('/')) relPath else file.fname.ifBlank { link.filename },
                             size = link.size,
                             platform = DownloadPlatform.LANZOU,
-                            headers = downloadHeaders(link.downloadUrl)
+                            headers = downloadHeaders(link.downloadUrl),
+                            saveDir = saveDir
                         )
                         okCount++
                     }

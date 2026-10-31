@@ -2,6 +2,8 @@ package com.yunx.app.ui.screens
 
 import com.yunx.app.ui.SnackbarController
 import com.yunx.app.ui.BackHandler
+import com.yunx.app.ui.theme.Motion
+import com.yunx.app.ui.theme.animateItemIfAllowed
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -9,7 +11,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,10 +31,13 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.CreateNewFolder
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.DriveFileMove
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -51,7 +55,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarScrollBehavior
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -71,6 +74,7 @@ import com.yunx.app.data.network.model.ShareExpire
 import com.yunx.app.data.network.model.ShareFile
 import com.yunx.app.ui.components.FadeAlertDialog
 import com.yunx.app.ui.components.ScrollToTopButton
+import com.yunx.app.ui.components.rememberDownloadDirPicker
 import com.yunx.app.ui.items.MultiSelectAction
 import com.yunx.app.ui.items.MultiSelectBar
 import com.yunx.app.ui.resolve.BackToParentItem
@@ -111,6 +115,7 @@ fun GuangYaCloudScreen(
         if (s is GuangYaCloudUiState.Loaded && s.pathNames.isNotEmpty()) viewModel.back() else onExit()
     }
     val listState = rememberLazyListState()
+    val pickDownloadDir = rememberDownloadDirPicker()
     var showActionSheet by remember { mutableStateOf(false) }
     var showRename by remember { mutableStateOf(false) }
     var showMove by remember { mutableStateOf(false) }
@@ -138,7 +143,8 @@ fun GuangYaCloudScreen(
         DownloadLinkDialog(
             link = link,
             onDownload = { viewModel.startDownload() },
-            onDismiss = { viewModel.dismissDownloadDialog() }
+            onDismiss = { viewModel.dismissDownloadDialog() },
+            saveDir = viewModel.pendingSaveDir.takeIf { it.isNotBlank() }
         )
     }
 
@@ -149,7 +155,7 @@ fun GuangYaCloudScreen(
         AnimatedContent(
             targetState = state,
             transitionSpec = {
-                fadeIn(tween(200)) togetherWith fadeOut(tween(140))
+                Motion.fade(200, 140)
             },
             label = "guangyaCloudState"
         ) { s ->
@@ -180,12 +186,7 @@ fun GuangYaCloudScreen(
                 }
 
                 is GuangYaCloudUiState.Loaded -> Box(modifier = Modifier.fillMaxSize()) {
-                    PullToRefreshBox(
-                        isRefreshing = viewModel.refreshing,
-                        onRefresh = { viewModel.refresh() },
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        LazyColumn(
+                    LazyColumn(
                             state = listState,
                             modifier = Modifier
                                 .fillMaxSize()
@@ -244,6 +245,9 @@ fun GuangYaCloudScreen(
                                                     tint = MaterialTheme.colorScheme.primary
                                                 )
                                             }
+                                            IconButton(onClick = { viewModel.refresh() }) {
+                                                Icon(imageVector = Icons.Outlined.Refresh, contentDescription = "刷新")
+                                            }
                                         }
                                     }
                                     if (!viewModel.multiSelectMode) {
@@ -279,7 +283,7 @@ fun GuangYaCloudScreen(
                             items(s.files, key = { it.fid }) { file ->
                                 ShareFileRow(
                                     file = file,
-                                    modifier = Modifier.animateItem(),
+                                    modifier = animateItemIfAllowed(),
                                     onClick = {
                                         if (viewModel.multiSelectMode) {
                                             viewModel.toggleSelect(file)
@@ -290,7 +294,7 @@ fun GuangYaCloudScreen(
                                             showActionSheet = true
                                         }
                                     },
-                                    onMore = if (!viewModel.multiSelectMode && file.isdir) {
+                                    onMore = if (!viewModel.multiSelectMode) {
                                         {
                                             viewModel.openActions(file)
                                             showActionSheet = true
@@ -298,8 +302,11 @@ fun GuangYaCloudScreen(
                                     } else {
                                         null
                                     },
-                                    onLongClick = if (!viewModel.multiSelectMode) {
-                                        { viewModel.enterMultiSelect(file) }
+                                    onContextMenu = if (!viewModel.multiSelectMode) {
+                                        {
+                                            viewModel.openActions(file)
+                                            showActionSheet = true
+                                        }
                                     } else {
                                         null
                                     },
@@ -308,7 +315,6 @@ fun GuangYaCloudScreen(
                                 )
                             }
                         }
-                    }
 
                     ScrollToTopButton(
                         listState = listState,
@@ -327,10 +333,14 @@ fun GuangYaCloudScreen(
                         modifier = Modifier.align(Alignment.BottomCenter)
                     ) {
                         MultiSelectBar(
+                            busy = viewModel.isOperating,
                             count = viewModel.selected.size,
                             actions = listOf(
                                 MultiSelectAction("下载", Icons.Outlined.Download, MaterialTheme.colorScheme.primary) {
                                     viewModel.downloadSelected()
+                                },
+                                MultiSelectAction("下载到…", Icons.Outlined.FolderOpen, MaterialTheme.colorScheme.primary) {
+                                    pickDownloadDir { viewModel.downloadSelected(it) }
                                 },
                                 MultiSelectAction("分享", Icons.Outlined.Share, MaterialTheme.colorScheme.primary) {
                                     showShare = true
@@ -358,9 +368,21 @@ fun GuangYaCloudScreen(
                 showActionSheet = false
                 viewModel.downloadFile()
             },
+            onDownloadTo = {
+                pickDownloadDir { dir ->
+                    showActionSheet = false
+                    viewModel.downloadFileTo(dir)
+                }
+            },
             onDownloadFolder = {
                 showActionSheet = false
                 viewModel.downloadFolder()
+            },
+            onDownloadFolderTo = {
+                pickDownloadDir { dir ->
+                    showActionSheet = false
+                    viewModel.downloadFolder(dir)
+                }
             },
             onRename = {
                 showActionSheet = false
@@ -378,6 +400,10 @@ fun GuangYaCloudScreen(
             onDelete = {
                 showActionSheet = false
                 showDeleteConfirm = true
+            },
+            onMultiSelect = {
+                showActionSheet = false
+                viewModel.actionFile?.let { viewModel.enterMultiSelect(it) }
             },
             onDismiss = {
                 showActionSheet = false
@@ -487,11 +513,14 @@ fun GuangYaCloudScreen(
 private fun GuangYaActionSheet(
     file: ShareFile,
     onDownload: () -> Unit,
+    onDownloadTo: () -> Unit,
     onDownloadFolder: (() -> Unit)? = null,
+    onDownloadFolderTo: (() -> Unit)? = null,
     onRename: () -> Unit,
     onMove: () -> Unit,
     onShare: () -> Unit,
     onDelete: () -> Unit,
+    onMultiSelect: (() -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -534,12 +563,21 @@ private fun GuangYaActionSheet(
             Spacer(modifier = Modifier.height(8.dp))
             if (!file.isdir) {
                 GuangYaActionItem(Icons.Outlined.Download, "下载", "使用内置下载功能保存到本机", MaterialTheme.colorScheme.primary, onDownload)
-            } else if (onDownloadFolder != null) {
-                GuangYaActionItem(Icons.Outlined.Download, "下载文件夹", "递归下载整个文件夹，保持目录结构", MaterialTheme.colorScheme.primary, onDownloadFolder)
+                GuangYaActionItem(Icons.Outlined.FolderOpen, "下载到…", "选择本次保存的文件夹（不改全局设置）", MaterialTheme.colorScheme.primary, onDownloadTo)
+            } else {
+                if (onDownloadFolder != null) {
+                    GuangYaActionItem(Icons.Outlined.Download, "下载文件夹", "递归下载整个文件夹，保持目录结构", MaterialTheme.colorScheme.primary, onDownloadFolder)
+                }
+                if (onDownloadFolderTo != null) {
+                    GuangYaActionItem(Icons.Outlined.FolderOpen, "下载文件夹到…", "选择本次保存的文件夹（不改全局设置）", MaterialTheme.colorScheme.primary, onDownloadFolderTo)
+                }
             }
             GuangYaActionItem(Icons.Outlined.Share, "分享", "生成分享链接（可设提取码/有效期）", MaterialTheme.colorScheme.primary, onShare)
             GuangYaActionItem(Icons.Outlined.DriveFileMove, "移动到", "移动到网盘的其他目录", MaterialTheme.colorScheme.primary, onMove)
             GuangYaActionItem(Icons.Outlined.Edit, "重命名", "修改文件名", MaterialTheme.colorScheme.primary, onRename)
+            if (onMultiSelect != null) {
+                GuangYaActionItem(Icons.Outlined.CheckCircle, "多选", "勾选多个项目批量下载 / 分享 / 移动 / 删除", MaterialTheme.colorScheme.primary, onMultiSelect)
+            }
             GuangYaActionItem(Icons.Outlined.Delete, "删除", "删除到回收站", MaterialTheme.colorScheme.error, onDelete)
         }
     }
@@ -647,7 +685,7 @@ private fun GuangYaMoveSheet(
             }
             AnimatedContent(
                 targetState = moveState,
-                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(140)) },
+                transitionSpec = { Motion.fade(180, 140) },
                 label = "guangyaMoveState"
             ) { s ->
                 when (s) {

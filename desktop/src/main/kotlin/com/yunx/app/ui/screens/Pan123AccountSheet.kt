@@ -17,17 +17,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Logout
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,9 +43,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.yunx.app.data.db.MultiAccountEntity
 import com.yunx.app.data.db.Pan123AccountEntity
 import com.yunx.app.ui.SnackbarController
-import com.yunx.app.ui.rememberGlobalSnackbarHostState
+import com.yunx.app.ui.GlobalSnackbarHost
+import com.yunx.app.util.maskAccountText
 import com.yunx.app.util.DesktopActions
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -63,12 +60,14 @@ import java.util.Locale
 @Composable
 fun Pan123AccountSheet(
     account: Pan123AccountEntity,
-    onLogout: () -> Unit,
+    accounts: List<MultiAccountEntity>,
+    onSetPrimary: (String) -> Unit,
+    onRename: (String, String) -> Unit,
+    onRemove: (String) -> Unit,
+    onAddAccount: () -> Unit,
     onDismiss: () -> Unit
 ) {
     var showFullToken by rememberSaveable { mutableStateOf(false) }
-    // 退出登录二次确认
-    var showLogoutConfirm by remember { mutableStateOf(false) }
 
     val tokenPreviewLimit = 200
     val tokenTruncated = account.accessToken.length > tokenPreviewLimit
@@ -81,7 +80,6 @@ fun Pan123AccountSheet(
         SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(account.updatedAt))
     }
 
-    val snackbarHostState = rememberGlobalSnackbarHostState()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val scrollState = rememberScrollState()
@@ -178,7 +176,8 @@ fun Pan123AccountSheet(
                 )
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    InfoRow(label = "登录账号", value = account.account.ifBlank { account.nickname })
+                    // 登录账号可能是手机号 / 邮箱，展示时脱敏
+                    InfoRow(label = "登录账号", value = maskAccountText(account.account.ifBlank { account.nickname }))
                     Spacer(modifier = Modifier.height(12.dp))
                     InfoRow(label = "登录时间", value = loginTime)
                     Spacer(modifier = Modifier.height(12.dp))
@@ -226,51 +225,19 @@ fun Pan123AccountSheet(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // 退出登录
-            Button(
-                onClick = { showLogoutConfirm = true },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error,
-                    contentColor = MaterialTheme.colorScheme.onError
-                )
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Logout,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("退出登录")
-            }
+            // 多账号：同一网盘可以同时登录多个账号，这里管理它们（主账号 / 备注 / 退出 / 添加）
+            AccountListSection(
+                accounts = accounts,
+                onSetPrimary = onSetPrimary,
+                onRename = onRename,
+                onRemove = onRemove,
+                onAddAccount = onAddAccount,
+                onEmpty = onDismiss
+            )
 
             // 复制提示（ModalBottomSheet 为独立窗口，需自带 Snackbar 宿主）
-            SnackbarHost(hostState = snackbarHostState)
+            GlobalSnackbarHost()
         }
-    }
-
-    // 退出登录二次确认
-    if (showLogoutConfirm) {
-        AlertDialog(
-            onDismissRequest = { showLogoutConfirm = false },
-            title = { Text("退出登录") },
-            text = { Text("确定要退出当前 123 账号吗？退出后将清除本地凭证。") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showLogoutConfirm = false
-                        onLogout()
-                    }
-                ) {
-                    Text("退出", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showLogoutConfirm = false }) { Text("取消") }
-            }
-        )
     }
 }
 

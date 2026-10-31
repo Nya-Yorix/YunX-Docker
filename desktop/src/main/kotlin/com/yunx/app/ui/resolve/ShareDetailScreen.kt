@@ -1,9 +1,10 @@
 package com.yunx.app.ui.resolve
 
+import com.yunx.app.ui.theme.animateItemIfAllowed
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.basicMarquee
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -57,8 +58,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -70,6 +75,7 @@ import com.yunx.app.data.network.model.ShareFile
 import com.yunx.app.data.network.model.ShareSession
 import com.yunx.app.data.prefs.SettingsRepository
 import com.yunx.app.ui.components.ScrollToTopButton
+import com.yunx.app.ui.components.rememberDownloadDirPicker
 import com.yunx.app.ui.items.MultiSelectAction
 import com.yunx.app.ui.items.MultiSelectBar
 import com.yunx.app.ui.screens.AddToBookmarkDialog
@@ -160,6 +166,7 @@ fun ShareDetailScreen(
     BackHandler { onBack() }
     // 文件列表滚动状态（返回顶部按钮用）
     val listState = rememberLazyListState()
+    val pickDownloadDir = rememberDownloadDirPicker()
     // 多选模式：底部批量操作栏 + 处理中弹窗
     // 内容抽成 lambda：仅 GitHub 平台包 PullToRefreshBox 下拉刷新，非 GitHub 路径原样渲染
     val listContent: @Composable () -> Unit = {
@@ -276,7 +283,7 @@ fun ShareDetailScreen(
             items(files, key = { it.fid }) { file ->
                 ShareFileRow(
                     file = file,
-                    modifier = Modifier.animateItem(),
+                    modifier = animateItemIfAllowed(),
                     onClick = {
                         if (viewModel.multiSelectMode) {
                             viewModel.toggleSelect(file)
@@ -292,7 +299,7 @@ fun ShareDetailScreen(
                     } else {
                         null
                     },
-                    onLongClick = if (!viewModel.multiSelectMode) {
+                    onContextMenu = if (!viewModel.multiSelectMode) {
                         { viewModel.enterMultiSelect(file) }
                     } else {
                         null
@@ -344,6 +351,19 @@ fun ShareDetailScreen(
                                 showBaiduLimitDialog = true
                             } else {
                                 viewModel.batchDownload()
+                            }
+                        }
+                    )
+                    add(
+                        MultiSelectAction("下载到…", Icons.Outlined.FolderOpen, MaterialTheme.colorScheme.primary) {
+                            pickDownloadDir { dir ->
+                                val hasBig = viewModel.selected.any { it.fsize > BAIDU_LIMIT_BYTES }
+                                if (viewModel.isBaidu && !baiduLimitDismissed && hasBig) {
+                                    pendingBaiduAction = { viewModel.batchDownload(dir) }
+                                    showBaiduLimitDialog = true
+                                } else {
+                                    viewModel.batchDownload(dir)
+                                }
                             }
                         }
                     )
@@ -630,7 +650,7 @@ internal fun CrumbBar(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalComposeUiApi::class, ExperimentalFoundationApi::class)
 @Composable
 internal fun ShareFileRow(
     file: ShareFile,
@@ -639,24 +659,30 @@ internal fun ShareFileRow(
     onSave: (() -> Unit)? = null,
     /** 非空时行尾显示「更多」按钮（打开文件操作菜单） */
     onMore: (() -> Unit)? = null,
-    /** 长按进入多选（多选模式下为 null） */
-    onLongClick: (() -> Unit)? = null,
+    /** 右键 / 长按 / 更多菜单（打开该行的操作菜单；多选模式下为 null） */
+    onContextMenu: (() -> Unit)? = null,
     /** 多选模式：是否选中 */
     selected: Boolean = false,
     /** 是否显示行首复选框（仅多选模式列表传 true；移动/转存等选择器不显示） */
     showCheckbox: Boolean = false,
     /** 文件徽章（文件名旁；GitHub Releases 最新/预发布/草稿、账号 repo Fork/语言） */
     badge: @Composable (() -> Unit)? = null,
-    /** 列表项动画等（调用方传入 Modifier.animateItem()） */
+    /** 列表项动画等（调用方传入 Modifier.animateItemIfAllowed()） */
     modifier: Modifier = Modifier
 ) {
+    // 打开操作菜单：右键、行尾「⋯」、左键长按三个入口，行为一致
+    val openMenu: (() -> Unit)? = (onContextMenu ?: onMore)
     Card(
         modifier = modifier
             .fillMaxWidth()
             .combinedClickable(
                 onClick = onClick,
-                onLongClick = onLongClick
-            ),
+                // 桌面端常见习惯是右键，但手机式「长按」也保留，两边都能打开菜单
+                onLongClick = openMenu
+            )
+            .onPointerEvent(PointerEventType.Press) { event ->
+                if (event.buttons.isSecondaryPressed) openMenu?.invoke()
+            },
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
             containerColor = if (selected) {
@@ -735,6 +761,11 @@ internal fun ShareFileRow(
                     )
                 }
             }
+            Icon(
+                imageVector = Icons.Outlined.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outline
+            )
             if (onMore != null) {
                 IconButton(onClick = onMore, modifier = Modifier.size(36.dp)) {
                     Icon(
@@ -745,11 +776,6 @@ internal fun ShareFileRow(
                     )
                 }
             }
-            Icon(
-                imageVector = Icons.Outlined.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.outline
-            )
         }
     }
 }

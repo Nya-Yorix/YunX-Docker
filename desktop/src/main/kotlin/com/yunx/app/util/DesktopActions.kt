@@ -2,8 +2,10 @@ package com.yunx.app.util
 
 import com.sun.jna.platform.win32.Advapi32Util
 import com.sun.jna.platform.win32.KnownFolders
+import com.sun.jna.platform.win32.Shell32
 import com.sun.jna.platform.win32.Shell32Util
 import com.sun.jna.platform.win32.WinReg
+import com.sun.jna.platform.win32.WinUser
 import java.awt.FileDialog
 import java.awt.Frame
 import java.awt.Toolkit
@@ -47,15 +49,93 @@ object DesktopActions {
         }.getOrDefault(false)
     }
 
-    /** 在资源管理器中显示文件（选中） */
+    /**
+     * 在资源管理器中显示文件（选中）。
+     *
+     * Windows 走 ShellExecute，把 `/select,"<绝对路径>"` 作为**原始参数串**交给系统；
+     * 不能用 ProcessBuilder —— 它按自己的规则给参数加引号/转义，两种写法都会失效：
+     *   1. `/select,` 与路径拆成两个参数：路径里的**半角逗号**会被 Explorer 当成参数分隔符，
+     *      截断后的路径不存在，Explorer 就落到「主文件夹」等默认位置（本次修的 bug）；
+     *   2. 合成一个参数并自带引号：Java 又把引号转义成 `\"`，Explorer 解析不出路径，同样落回默认位置。
+     * ShellExecute 不做任何转义，逗号/空格/中文路径都能正确定位。
+     */
     fun revealFile(path: String): Boolean {
         val file = File(path)
         if (!file.exists()) return false
+        if (WindowsTitleBar.isWindows) {
+            // 返回 HINSTANCE：> 32 表示成功（<= 32 是错误码），失败再退回命令行方式
+            val ret = runCatching {
+                Shell32.INSTANCE.ShellExecute(
+                    null, "open", "explorer.exe",
+                    "/select,\"${file.absolutePath}\"", null, WinUser.SW_SHOWNORMAL
+                )
+            }.getOrNull()
+            if (ret != null && com.sun.jna.Pointer.nativeValue(ret.toPointer()) > 32L) return true
+        }
         return runCatching {
-            val cmd = arrayOf("explorer.exe", "/select,", file.absolutePath)
-            ProcessBuilder(*cmd).start()
+            ProcessBuilder("explorer.exe", "/select,", file.absolutePath).start()
             true
         }.getOrDefault(false)
+    }
+
+    /** 在资源管理器中打开目录（不存在时先创建） */
+    fun openDirectory(path: String): Boolean {
+        val dir = File(path)
+        if (!dir.isDirectory && !dir.mkdirs()) return false
+        return runCatching {
+            ProcessBuilder("explorer.exe", dir.absolutePath).start()
+            true
+        }.getOrDefault(false)
+    }
+
+    /**
+     * 把主窗口拉到前台（托盘「显示主窗口」、剪贴板弹窗点「打开」共用）。
+     *
+     * ★ Windows 上必须做两件事，少一件就会出现「点了打开但窗口没到前台」：
+     *   1. **先还原**：窗口可能已**最小化到任务栏**（extendedState 含 ICONIFIED 位），
+     *      此时 toFront() 对它是无效的 —— 必须先把状态改回 NORMAL；
+     *   2. **再置顶置前**：toFront() 单独调用不一定能夺取前台焦点，用 alwaysOnTop 瞬时切换强制置顶。
+     */
+    fun bringWindowToFront(window: Frame?) {
+        val w = window ?: return
+        runCatching {
+            w.isVisible = true
+            if (w.extendedState and Frame.ICONIFIED != 0) {
+                w.extendedState = Frame.NORMAL
+            }
+            val wasOnTop = w.isAlwaysOnTop
+            w.isAlwaysOnTop = true
+            w.toFront()
+            w.requestFocus()
+            w.isAlwaysOnTop = wasOnTop
+        }
+    }
+
+    /**
+     * 重启应用：延迟 2 秒后拉起新的实例（给本进程留出退出的时间，避免两个实例同时抢数据库/缓存），
+     * 返回是否成功发起。调用方应在返回 true 后立即退出本进程。
+     *
+     * 拿不到启动器 exe（开发运行 `gradle run`）时返回 false，由调用方提示手动重启。
+     */
+    fun restartApp(): Boolean {
+        val exe = launcherExe() ?: return false
+        return runCatching {
+            // 用 cmd 延迟启动：本进程马上就会退出，必须等它把文件句柄都放掉。
+            // 延迟用 ping 而不是 timeout —— timeout 在 stdin 被重定向时会直接报错退出（ProcessBuilder 默认就是管道）
+            ProcessBuilder(
+                "cmd.exe", "/c",
+                "ping -n 3 127.0.0.1 >nul & start \"\" \"${exe.absolutePath}\""
+            ).directory(exe.parentFile).start()
+            true
+        }.getOrDefault(false)
+    }
+
+    /** 便携版/安装版的启动器 exe：优先 jpackage 注入的路径，否则取工作目录下的 YunX-Desktop.exe */
+    private fun launcherExe(): File? {
+        System.getProperty("jpackage.app-path")?.let { p ->
+            File(p).takeIf { it.isFile }?.let { return it }
+        }
+        return File(File(System.getProperty("user.dir") ?: "."), "YunX-Desktop.exe").takeIf { it.isFile }
     }
 
     /** 用系统默认浏览器打开链接 */

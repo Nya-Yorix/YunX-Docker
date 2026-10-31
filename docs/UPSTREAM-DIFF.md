@@ -340,6 +340,145 @@
 | `DiagnosticWebViewClient`、`WebViewJs` 埋点、8 个登录页的 `WEBVIEW` 模块埋点 | **未移植**：桌面用 JCEF 而非 Android WebView。保留了 `DiagnosticLog.WEBVIEW` 常量与 `DiagnosticLog.webview()` 入口（日志格式与上游兼容），但暂未接 JCEF 的加载/回调事件 |
 | 上游 `app/build.gradle.kts` 版本号（1.2.9） | 桌面版本线独立：根目录 `version.txt` 改为 **1.2.7**（jpackage / 便携包 / 安装包 / 应用内版本全部由它派生） |
 
+### 9.12 本次对齐（上游 `94149ed`/`28bfa37`/`0f27e67`/`f729604`/`6384a79`/`bdafe9e`）
+
+本轮覆盖上游 `94149ed`(#152/#153) → `28bfa37`(#154) → `0f27e67`(#155) → `f729604`(#161) → `6384a79`(#163) → `bdafe9e`(#164)，对齐点由 `ccc8622` 推进到 **`bdafe9e`**。
+
+#### 已移植
+
+| 上游内容（提交） | 桌面实现与取舍 |
+| --- | --- |
+| 迅雷刷新请求补 `Sec-CH-UA` 系客户端提示（#152） | `XunleiWebCredential` 新增 `DESKTOP_SEC_CH_UA` / `DESKTOP_SEC_CH_UA_MOBILE` / `DESKTOP_SEC_CH_UA_PLATFORM` 三个常量，`XunleiApi` 的 webToken 刷新请求同步带上（只改 UA 不同步 client hints 会被判成移动端而冲突） |
+| 去掉「也可以直接粘贴 access_token」误导文案（#152） | `XunleiWebLoginScreen` 的手动粘贴说明与输入框 placeholder 同步改掉（`parse()` 仍兼容裸 token，只是不再对外宣传） |
+| `verifyAccessToken` 兼容网页 token 的 `kind=drive#about`（#161） | 逐字节移植：该接口在网页（webToken）通道下返回**顶层** `kind/quota`（没有 `data` 包裹），原来只判 `data` 会把合法网页 token 误判成未登录 →「登录成功后点保存提示未检测到登录态」 |
+| 中文口令解析（星海，夸克/UC）（#163） | 新增 `StarSeaConstants.kt` + `StarSeaApi.kt`（纯 OkHttp + org.json，直译；`android.util.Log` → 桌面 `Log`）。`ResolveViewModel.startResolve` 的兜底链路改为**先迅雷、迅雷没给出可用链接再问星海**，两个服务都失败时把更靠后那次的原因带出去（不再只丢一句「无法识别分享链接」）；`StarSeaApiTest` 同步移植 |
+| 分片级 SHA-256 校验（#163） | `ChunkDownloader`：新增 `ByteArray.toHexDigest()`、`downloadChunk(contentDigest)`、`mergeChunksToStream(onPartDigest)`（写入时增量喂摘要，合并时逐片重算比对，不符即拒绝保存损坏文件，**零额外读盘**）。`DownloadManager`：新增 `taskPartDigests` / `newPartDigest`（把断点续传已有前缀预先喂好），主池 / 弹性区 / 重试三条路径都登记摘要，`finishDownload` 校验不过就 abort |
+| 全量 SHA-256（可选开关）（#163） | 合并那一遍用 `DigestOutputStream` 顺带算，写进调试日志的「全量校验」事件；**只在「下载调试」开启时才算**（摘要没有别的去处），设置项 `fullFileSha256` 默认关 |
+| 下载调试（按任务事件流 + 调试页）（#163） | 新增 `DownloadDebugLog`（内存态、关闭即清空、单任务 2000 条 / 最多 50 个任务）与 `DownloadDebugScreen`；`DownloadManager` 埋点全覆盖（入队 / 拦截失败 / 断点失效 / 分片规划 / 抢占慢连接 / 抢占结果 / 网络变化 / 开始合并 / 分片校验 / 全量校验 / 校验失败 / 合并失败 / 清理临时文件 / 完成 / 失败 / 暂停 / 删除 / 引擎任务创建），并暴露 `chunkDebugSnapshot` / `resourceDebugSnapshot` / `forcePreemptChunk` 三个拉取式查询。入口：设置 → 关于云析 → 长按 → 开发调试 → **下载调试**（关闭有二次确认，关闭即清空日志）；下载页**右键任务 → 调试信息** |
+| Material 3 设计审查修复（#164，适用部分） | ① `SnackbarController` 换成上游的**事件队列 + 宿主优先**实现（修复多宿主并存时第二条提示被吞/重复显示）；② `Type.kt` 对齐 M3 刻度（headlineMedium 22→28、titleLarge 18→22、bodyLarge 15→16、bodyMedium 13→14…）；③ 新增 `ui/theme/ColorContrast.kt` 的 `readableSeedForeground`，主题页色圆上的对勾/Palette 图标由硬编码白色改为**按种子色亮度选黑/白**（浅色种子上原来的白图标几乎看不见）；④ `ResolveScreen` 的 GitHub 徽章由硬编码绿/橙/灰改为主题容器色（深色模式下对比度）；⑤ `DownloadScreen` 两处进度条去掉强制的 `height + clip`，交回 M3 默认尺寸；⑥ `ThemeScreen` 颜色选择器：HEX 输入只接受合法十六进制字符（旧实现 `isLetterOrDigit` 会放进 G-Z，凑满 6 位却解析失败）、`singleLine = true`、弹层加 `verticalScroll`；⑦ `MultiSelectBar` 新增 `busy` 参数（`count == 0 \|\| busy` 时禁用点击并置灰），10 个云盘页传入 `viewModel.isOperating` |
+
+#### 跳过 / 桌面差异
+
+| 上游内容 | 处理 |
+| --- | --- |
+| 欢迎页「7 大网盘」→「10 大网盘」、认证备份补光鸭/蓝奏云优享版/蓝奏云（#152） | **早已具备**：桌面引导页写的已是「10 大网盘」，`AuthBackupManager` 也已包含三个新平台的导出/导入与 DAO 装配 |
+| `suppressRequestedWithHeader()`（8 个登录页关闭 WebView 的 `X-Requested-With` 包名指纹，#152） | **不适用**：那是 Android WebView 的默认行为。桌面用 JCEF，不发这个头；桌面各 API 里显式写的 `X-Requested-With` 是各网盘接口自己的要求，与指纹无关 |
+| `applyDesktopClientHints()` / `DESKTOP_RENDER_FIX_JS`（WebView 同步 client hints + 修登录页整页空白/被裁，#161） | **不适用**：桌面 JCEF 就是真正的桌面 Chromium，client hints 天然正确；上游修的是「移动 WebView 里 `html,body{height:100%}` 被算成 0px + `overflow:hidden` 把整页裁掉」，桌面不存在该布局环境 |
+| `DownloadService`（Android 前台服务，89 行）、`MainActivity` 实况通知点击落到「下载」Tab（#163） | **不适用**：桌面没有前台服务与 Activity 跳转（窗口常驻）。保活走 `WindowsKeepAwake`，通知走 `WindowsToastNotifier` |
+| `YunXApp.onCreate` 里的 `DownloadDebugLog.install` / `AndroidManifest` 改动（#163） | **桌面等价物已实现**：装配改在 `Main.kt`（`AppContext.init()` 之后调 `DownloadDebugLog.install()`，`runCatching` 包住）；无 Manifest 概念 |
+| `ui/screens/DownloadDebugScreen` 的单列长滚动布局（#163） | **重新设计为桌面双栏**：顶部一行放「返回 + 标题 + 复制快照 / 导出完整日志」，任务卡压成一行（图标 / 名称 / 状态 / 进度 / 实时速度 / 操作同排），正文左栏＝全局资源 + 线程表、右栏＝实时日志（等宽字体、跟随尾部），两栏各自滚动 —— 桌面横向空间充裕而竖直空间更紧 |
+| `ui/components/OperationSheet` + `LocalFileOperationBusy`（#164，ModalBottomSheet 封装） | **未移植**：桌面没有 ModalBottomSheet，各操作面板走 `FadeAlertDialog` / 就地覆盖层。`CloudFileSheets` 的 `ActionItem` 也未加 `busy` 置灰 —— 桌面点菜单项后**立即关闭面板或切到下一步**（下一步自身已按 `operating` 禁用按钮），不存在上游触屏场景下的重复点击窗口 |
+| `ui/theme/WindowLayout.kt` 的 `useNavigationRail`（#164） | **不适用**：桌面窗口恒为宽屏，导航即左侧 NavigationRail，没有「宽高判断选导轨还是底栏」这一步 |
+| `MultiSelectBar` 的 Tooltip（#164） | **不适用**：桌面的批量条是「图标 + 文字」两行布局（不是上游的纯图标浮动工具条），文字标签本身已经说明了操作含义，不需要 tooltip 兜底 |
+| `DownloadScreen` 图标按钮 32dp → 48dp（#164） | **未采用**：48dp 是 Material 的**触屏**最小点击区。桌面用鼠标，48dp 按钮会明显偏大；保留 32dp |
+| `ThemeScreen` 自定义颜色弹层补「色相/饱和度/明度」Slider（#164） | **未采用**：桌面弹层本来就有可拖拽的 SatVal 方块 + 色相条，鼠标拖拽比滑条更直接；本次只修了该弹层的 HEX 过滤、单行与滚动 |
+| `ThemeScreenAppIconOption` / 主题模式的 `selectable` + `selectableGroup` 语义（#164） | **未移植**：纯无障碍语义改动，桌面端对读屏依赖低，本轮不引入 |
+| `28bfa37`(#154) 新增友情链接、`0f27e67`(#155) README 截图替换 | **不移植**：纯 README / 图片资源，桌面仓库的 README 独立维护 |
+| 登录页 `liveRegion` 语义、`isError` → `enabled`、密码可见性图标语义（#164） | **未移植**：纯无障碍语义改动（桌面端对读屏依赖低），本轮不引入 |
+
+### 9.13 本次对齐（上游 #178 / #179）
+
+本轮覆盖 `b4d8ad7`(#178) 与 `cad7718`(#179)，对齐点由 `bdafe9e` 推进到 **`cad7718`**。
+
+#### 已移植
+
+| 上游内容（提交） | 桌面实现与取舍 |
+| --- | --- |
+| 文件夹落盘修复（#178） | 尾斜杠语义（只给目录时名字用 fallback）、引擎任务预建目标目录、完成态路径保留相对子目录、批量下载失败统计；折叠状态 `rememberSaveable` 早已具备 |
+| 凭证加固（#179） | `decryptOrNull`（解密失败不再清整张账号表）、密钥只在「确实解不开」时更换、MachineGuid 读不到按暂时不可用、GitHub Token 只失效不删 |
+| 多账号基础能力（#179） | 10 张账号表新增 `isPrimary`/`remark`（DDL + 启动时逐表 ALTER 自动迁移，老数据零感知）；DAO/JDBC 改多行实现（同平台单主账号、删主后自动补位）；加密装饰器提供列表接口；`AccountDirectory` + `MultiAccountViewModel`；`resolveAccountSlot` 接入 10 个 Repository（日常重登覆盖主账号行、「添加账号」落新行）；10 个账号弹窗接入 `AccountListSection`（列表 / 设主账号 / 备注 / 退出单个 / 添加账号），网盘页接线完成 |
+| C1 多账号下载（#179，实验性） | 批量下载按文件轮换同一网盘的不同账号取链；仓库新增 `allCredentials` / `refreshIfPrimary`，夸克/UC 的 `cookieSink` 改为按本次请求所用 Cookie 回写对应账号行。**覆盖全部 10 个平台**（各平台取链仓库本来就把凭证作为方法参数，token 型平台内部 `cookie.ifBlank { tokenProvider() }` 兜底）。批量前**逐账号**校验整批空间：空间不足的账号跳过、只剩一个可用时自动退回单账号；完成提示显示「N 个账号成功取链 / M 个账号空间不足已跳过 / 已退回单账号」 |
+| C2 单文件多源分片（#179，实验性） | 新增 `DownloadSource`；`download_task.altSourcesJson`（加密落库 + 旧库迁移）；分片按 `offset / chunkSize % 源数` 轮流使用不同直链；分片规划 / 并发上限 / 合并逻辑一字未动，断点续传兼容。**覆盖夸克 / UC / 迅雷 / 百度**（这四家的下载请求头差异都只有 Cookie 一项；115 双 Cookie 等需重新评估，未纳入） |
+| 设置开关 | 并入桌面现有「实验性功能」页（不新建二级页）：两个开关 + 开启前风险确认；关闭 C1 时强制关闭 C2 |
+
+#### 跳过 / 桌面差异
+
+| 上游内容 | 处理 |
+| --- | --- |
+| 深链接 / 分享 / 选中文本（`activity-alias`、`singleTask`、`PROCESS_TEXT`，#178） | **不适用**：Android Intent 体系；桌面已有剪贴板识别 |
+| `LinkOpenTarget` / `LinkOpenScreen` / 13 项召唤开关（#178） | **不适用**：同上，无 Android 组件可开关 |
+| Android WebView 登录态清理（`CookieManager`/`WebStorage`，#179） | **桌面等价物**：`CookieCleaner.clearCookiesForDomains`（JCEF Cookie）——「添加账号」与「退出最后一个账号」时按平台域名清理 |
+| `MultiAccountDownloadScreen` 独立二级页 + `ExperimentalBadge`（#179） | **改为并入桌面「实验性功能」页**；未单独抽 `ExperimentalBadge`（桌面实验性条目已有文案标注） |
+| C2 的 139 / 123 / 115 / 光鸭 / 蓝奏优享 / 蓝奏覆盖 | **未做**：这些平台的下载请求头不止 Cookie（115 是双 Cookie + Referer，123/光鸭/蓝奏是 CDN 签名头），多源必须按源重建整套头，本次不冒险；开关对它们退回单源 |
+
+### 9.14 本次对齐（上游 1.3.0 十连提交 `0a7c71e` ~ `3e51a4d`）
+
+本轮覆盖 #183 ~ #204（视频解析 + 下载链路 + 播放器 + 细节），对齐点由 `cad7718` 推进到 **`3e51a4d`**。
+
+#### 已移植
+
+| 上游内容（提交） | 桌面实现与取舍 |
+| --- | --- |
+| 视频解析主体（#183） | `data/network/video/`：`VideoModels` / `VideoHttp` / `VideoParser` / 7 个平台 Parser / `VideoLinkParser`；`VideoParseRepository`、`VideoAccountRepository` |
+| 视频账号（#183） | `video_account` 表（含 `isPrimary`/`remark`）+ 列级加密 DAO；账号区复用网盘的多账号卡片（列表 / 设主账号 / 备注 / 退出）；登录走 JCEF `JcefLoginPane`（Cookie 自动回读 + 手动粘贴兜底） |
+| 解析结果页（#183） | `VideoResolveScreen` + `VideoResultSection`：作品信息、媒体行、图集网格、批量选择；图片来源桌面自带 `RemoteImageLoader`（走 OkHttp + Skia，不用 Coil） |
+| 图集查看器（#183） | `ImageViewerOverlay` 重写为桌面交互：滚轮以鼠标为锚点缩放、任意级别拖拽、双击复位、Esc 关闭 |
+| 下载链路（#183） | `DownloadManager` 接入四种形态：单文件 / HLS（`HlsDownloader` 分片→合并）/ Live Photo（`MotionPhotoWriter`，ImageIO 合成）/ 图集批量；`download_task` 新增 `mergeAudioUrl`、`mergeAudioHeadersJson`、`motionUrl` 三列 |
+| B站登录 + DASH 高清（#188） | 登录同视频账号体系；DASH 取音视频分轨直链，**`DashMuxer` 用 mp4parser 重写**（Android MediaCodec 无桌面等价物）。M1.5 探针用真实样本验证：双轨齐全、时长差 0.154s |
+| 小红书去水印（#189） | 图集地址换算原图 CDN（`sns-img-bd.xhscdn.com/<图片ID>`）；原图 404 时回退平台地址，并以 `notice` 提示降级张数 |
+| 动图 Live Photo（#202） | 微博 `videoSrc` / 抖音动图解析 + `MotionPhotoWriter` 合成单张 JPEG（保活元数据丢弃，观感一致） |
+| 预览播放器（#183） | **桌面重写**（ExoPlayer → JavaFX）：MP4 走本地回环代理（注入 `Referer`/`UA`/`Cookie` + Range 透传）；HLS 走自研 TS→fMP4 重封装并写本地增长文件实现边下边播（jfxmedia 不播 m3u8、也不吃 HTTP fMP4）。控制条常显：播放/暂停、进度、倍速、静音、全屏 |
+| 抖音隐藏 WebView（#183） | `HeadlessWebView` 重写为 JCEF 隐藏浏览器 + `CefMessageRouter`（`cefQuery` 回传替代 `evaluateJavascript` 回调），仅在 SSR 路线失败时兜底 |
+| 图标 48→40dp（#185） | 视频平台 Logo 40dp；网盘账号头像 48→40dp 对齐 |
+| 版本 1.3.0（#186） | `version.txt` / 构建版本号 1.3.0 |
+| 删除弹窗整行可点（#204） | 下载页「删除任务」「删除全部」弹窗的「同时删除本地文件」改为整行 `toggleable`（`Role.Checkbox`），点文字也能切换 |
+| 动效降级（跨里程碑约束） | 新增 `MotionPolicy` + `Motion`：`软件渲染 || 用户开关` 时关闭主 Tab 位移（仅 ≤80ms 淡入）、目录切换淡入时长归零、列表 `animateItem` 关闭、引导页无限漂移改静态、返回顶部按钮缩放取消；设置 → 主题与外观 → 动效 新增「减少动画」开关（持久化、即时生效） |
+
+#### 跳过 / 桌面差异
+
+| 上游内容 | 处理 |
+| --- | --- |
+| 深链接恢复 / 返回键（#204） | **不适用**：Android Intent 与 Activity 返回栈；桌面已有剪贴板识别与 `BackHandler` |
+| 设置页容器变换（#184） | **不适用**：上游用 `materialSharedAxis` 的容器级变换，桌面页面切换是 Compose 的 `AnimatedContent`（本轮已接入 §3.7 降级） |
+| 支持页卡片几何（#184） | **未改**：桌面支持页布局本就与移动端不同（窗口宽、两列卡片），逐像素对齐没有收益 |
+| 清理 mp4parser 残留（#192） | **不适用**：桌面本轮才引入 mp4parser（#188 合轨需要） |
+| README 补 PC 说明（#196） | **改为桌面口径**：README / FEATURES 补「视频解析与预览」章节，不照搬移动端说明 |
+| 预览用 media3 `MergingMediaSource`（#183） | **改路实现**：JavaFX 不能串两路流，B站 DASH 预览改为解析时另取 `fnval=1&platform=html5` 的单文件 mp4（`VideoMedia.previewUrl`）走回环代理播放；下载仍走高清分轨（详见 §9.15） |
+| 视频卡片拆分（#185 后半） | **已由 #183 移植覆盖**：桌面账号区一开始就按「平台卡片 + 账号列表」拆分 |
+
+### 9.15 B 站分轨合轨重写 / DASH 预览 / 动图格式（2026-10-23，非上游提交）
+
+三处实测缺陷的根因与处理（用户反馈：「合轨后时间轴损坏」「B 站无法在线预览」「动图选视频格式后缀仍是 JPG」）：
+
+| 现象 | 根因（实测） | 处理 |
+| --- | --- | --- |
+| 合轨成品时长只有 0.05 秒、进度条废掉 | `MovieCreator` 读分片 MP4 只认 `trun` 的逐样本时长，而 B 站把时长放在 `tfhd.default_sample_duration`（音频甚至只在 `mvex/trex`），也不读 `tfdt` → 重建的 `stts` 全是 0 | `DashMuxer` 改为**自解析** `moof`/`tfhd`/`tfdt`/`trun`/`trex`，再自写 `moov`+`mdat`（分块约 1 秒、双轨按时间交错、`elst` 原样保留、`stss` 用 `sample_depends_on`）。真实样本（BV1GJ411x7h7，avc1 480P + mp4a）：成品 212.31s / 5306 帧，与 ffmpeg 直转一致，解码无错 |
+| B 站结果页没有「预览」 | 预览按钮按 `audioUrl.isBlank()` 判断，分轨条目一律隐藏；且 `.m4s` 分片流 JavaFX 既播不了扩展名也串不了两路 | 解析 DASH 时**另取**一次 `fnval=1&platform=html5` 的单文件 mp4 放进 `VideoMedia.previewUrl`（预览专用，不下载整片），预览优先用它走回环代理；下载仍走高清分轨。DASH 视频轨同时改为**优先 AVC**（codecid=7），合轨产物兼容性最好 |
+| Live 图选「视频格式」后仍是 `.jpg` | 只替换了 `url`，`VideoMediaKind` 仍是 `IMAGE` → 文件名按图集规则回退 `.jpg` | 选视频时把 `kind` 改成 `VIDEO`（扩展名由直链后缀决定，没有就 `.mp4`），并清掉「动图」清晰度标签 |
+
+**安装包/预览链路的连带缺陷**（都是开发运行看不出来、只有打包后才暴露的）：
+
+| 现象 | 根因 | 处理 |
+| --- | --- | --- |
+| 打包后一点预览就提示「该视频暂时无法在线预览」 | jlink 运行时镜像缺 `jdk.httpserver`，`com.sun.net.httpserver.HttpServer` 加载即 `NoClassDefFoundError`，回环代理起不来 | `portable-package.ps1` 与 `build.gradle.kts` 的模块清单补 `jdk.httpserver` |
+| 补完模块后播放报 `ERROR_MEDIA_INVALID` | `LoopbackMediaProxy` 用 `resp.body.contentLength()` 取长度；OkHttp 的 HEAD 响应 body 为空（=0），于是对 HEAD 回了 `Content-Length: 0`，GStreamer 据此判定媒体为空 → 无效媒体 | 长度改为优先取上游 `Content-Length` 响应头。实测同一 B 站 durl：修复前 `ERROR_MEDIA_INVALID`，修复后 `READY duration=212394ms` 并正常播放 |
+| 打包后播放器直接初始化失败 `jdk/swing/interop/SwingInterOpUtils` | javafx.swing 的 `module-info` 要求 `jdk.unsupported.desktop`，jlink 同样探测不到 | 模块清单补 `jdk.unsupported.desktop` |
+
+### 9.16 本次对齐（上游 `4bd22e4` / #206）
+
+#### 已移植
+
+| 上游内容 | 桌面实现与取舍 |
+| --- | --- |
+| 迅雷网页账号「验证码无效」 | 根因同上游：网页登录拿到的是**网页 client_id** 的 token，却用 App client_id 签发的 captcha 去请求，服务端一律回 `captcha_invalid`（`client_id not match`）。桌面补上网页端 9 盐 `captcha_sign`（`XunleiWebCredential.computeCaptchaSign`，已知向量单测锁定）、`XunleiApi.initWebCaptcha`、按设备号 + 过期时间的 captcha 缓存、`webCaptchaRefresher` 钩子、`client_id not match` 直接报错不重试 |
+| 网页 captcha 只有 300s | 缓存从「单个字符串」改成 `PanCaptcha(token, expiresAtMs)`，过期即先换再请求，不再拿死 token 撞一次 `captcha_invalid` |
+| 签名被拒时回退网页会话 | 桌面用 `HeadlessWebView`（JCEF + `cefQuery`）重开 `pan.xunlei.com`，`REFRESH_READY_JS` 等到网页自己刷新出有效 captcha 后再 `READ_SCRIPT` 取凭据；Android 的隐藏 WebView 与 client hints/render-fix 注入不适用，已换成这套 |
+| 抢占/重连要点「真」掐断连接 | `ChunkDownloader` 新增 `activeChunkCalls` + `cancelChunkCall`，主池/弹性区/重试/**DASH 分轨**四条路径都逐片登记；看门狗抢占与调试页「重连」都主动 `call.cancel()`（只置标志位对挂住的连接无效） |
+| 「疑似卡死」改判据 | 调试页从「速度低于 12KB/s」改为「本轮采样零字节」，并显示「已 Ns 无数据」（`ChunkDebug.idleMs`）；低速但仍在推进的分片不再被误标 |
+| 断点续传进度校验 | 按当前计划逐片校验磁盘长度（`part_i` 不超过本片区间、只认弹性起点之后的 `seg_*`），并在取得大小后与恢复时**双向校正**写库，避免旧 job 残留把进度顶到 100% 后卡死 |
+| 认证备份纳入视频平台 | `AuthBackupManager` 增 `videoAccountDao`：`video:<PLATFORM>` 前缀与网盘共用 `accounts` 数组，逐行导出 `id/isPrimary/remark`；导入只恢复本版本仍认识的平台 |
+| 设置页文案 | 「网盘认证」→「认证备份」，「导出/导入认证信息」并说明含视频平台 |
+
+#### 跳过 / 桌面差异
+
+| 上游内容 | 处理 |
+| --- | --- |
+| WebView client hints（`UserAgentMetadata`）与登录页 render-fix JS | **不适用**：JCEF 直接跑桌面版页面，本来就是桌面 UA / 桌面布局；`isTrustedUrl` 等域名白名单逻辑桌面已有 |
+| 深链接统一处理（VIEW / SEND / PROCESS_TEXT） | **不适用**：Android Intent；桌面已有剪贴板识别 + 拖拽/命令行入口 |
+| 认证备份的 Android auto-backup 规则（`AuthBackupManager` 里的 XML 片段） | **不适用**：桌面备份走文件导入导出 |
+| 调试页「重连」文案与按钮 | 桌面已有等价入口，仅同步判据与日志文本（「手动抢占」→「手动重连」） |
+
+
 
 
 

@@ -116,9 +116,38 @@ fun XunleiWebLoginScreen(
 
     DisposableEffect(browserHolder) {
         onDispose {
+            Log.d(TAG, "web login 页面销毁，关闭内嵌浏览器")
             runCatching { browserHolder?.browser?.close(true) }
             runCatching { browserHolder?.client?.dispose() }
         }
+    }
+
+    LaunchedEffect(browserHolder) {
+        Log.d(
+            TAG,
+            "web login 页面就绪：jcefReady=$ready app=${app != null} browser=${browserHolder != null} " +
+                "添加账号=${viewModel.isAddingAccount}"
+        )
+        val holder = browserHolder ?: return@LaunchedEffect
+        // ★「添加账号」：只清 Cookie 不够 —— 网页把 refresh_token 也写在 localStorage 里，
+        //   页面一加载就会静默登回旧账号（表现就是「登录页一闪就关 / 加的还是原来那个」）。
+        //   这里把网页自己保存的凭据一并删掉再刷新，页面才会停在登录态。
+        if (!viewModel.isAddingAccount) return@LaunchedEffect
+        delay(800)
+        runCatching {
+            SwingUtilities.invokeLater {
+                runCatching {
+                    holder.browser.executeJavaScript(
+                        XunleiWebCredential.CLEAR_SESSION_SCRIPT,
+                        XunleiWebCredential.LOGIN_URL,
+                        0
+                    )
+                }
+                Log.d(TAG, "已清除网页登录态（localStorage 凭据），准备新账号登录")
+            }
+        }
+        delay(300)
+        runCatching { SwingUtilities.invokeLater { runCatching { holder.browser.reload() } } }
     }
 
     // 自动检测：注入 Cookie 桥 → 读回凭据 → 校验落库（同一份凭据失败后短暂冷却再试）
@@ -161,6 +190,7 @@ fun XunleiWebLoginScreen(
                 onSaved()
                 break
             } else {
+                Log.w(TAG, "网页凭据校验未通过（旧会话 / 网络异常），稍后重试")
                 lastFailed = raw
                 lastFailedTs = System.currentTimeMillis()
             }
@@ -294,7 +324,7 @@ fun XunleiWebLoginScreen(
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = "在电脑浏览器登录 pan.xunlei.com 后，从开发者工具复制 localStorage 中 " +
-                                "${XunleiWebCredential.STORAGE_KEY} 的值（整段 JSON 即可）；也可以直接粘贴 access_token",
+                                "${XunleiWebCredential.STORAGE_KEY} 的值（整段 JSON 即可）",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -303,7 +333,7 @@ fun XunleiWebLoginScreen(
                             value = pasteInput,
                             onValueChange = { pasteInput = it },
                             modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("粘贴凭据 JSON 或 access_token…") },
+                            placeholder = { Text("粘贴凭据 JSON…") },
                             minLines = 4,
                             maxLines = 8
                         )

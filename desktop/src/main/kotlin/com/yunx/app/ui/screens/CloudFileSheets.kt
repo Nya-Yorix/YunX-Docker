@@ -1,10 +1,7 @@
 package com.yunx.app.ui.screens
 
+import com.yunx.app.ui.theme.Motion
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,6 +25,7 @@ import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.DriveFileMove
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -41,7 +39,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -52,6 +49,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,13 +62,16 @@ import com.yunx.app.data.network.model.ShareExpire
 import com.yunx.app.data.network.model.ShareFile
 import com.yunx.app.ui.SnackbarController
 import com.yunx.app.ui.components.FadeAlertDialog
-import com.yunx.app.ui.rememberGlobalSnackbarHostState
+import com.yunx.app.ui.GlobalSnackbarHost
 import com.yunx.app.util.DesktopActions
 import com.yunx.app.ui.resolve.BackToParentItem
 import com.yunx.app.ui.resolve.CrumbBar
 import com.yunx.app.ui.resolve.ShareFileRow
 import com.yunx.app.ui.viewmodel.QuarkCloudUiState
 import com.yunx.app.ui.viewmodel.QuarkCloudViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** 文件操作菜单类型（FileActionSheet 内切换） */
 private enum class ActionStep { MENU, MOVE, SHARE, RENAME, DELETE }
@@ -92,12 +93,25 @@ private val expireOptions = listOf(
 fun FileActionSheet(
     file: ShareFile,
     viewModel: QuarkCloudViewModel,
+    onMultiSelect: (() -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     var step by remember { mutableStateOf(ActionStep.MENU) }
     // 移动目标浏览用独立状态（moveUiState），不影响主列表
     val moveState by viewModel.moveUiState.collectAsState()
     val operating = viewModel.isOperating
+    val scope = rememberCoroutineScope()
+
+    /** 选择本次下载的保存目录（原生目录选择器）；取消则不改动 */
+    fun pickDownloadDir(onPicked: (String) -> Unit) {
+        scope.launch {
+            val dir = withContext(Dispatchers.IO) { DesktopActions.pickDirectory() }
+            if (!dir.isNullOrBlank()) {
+                onPicked(dir)
+                onDismiss()
+            }
+        }
+    }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -115,9 +129,15 @@ fun FileActionSheet(
                     viewModel.downloadFile()
                     onDismiss()
                 },
+                onDownloadTo = {
+                    pickDownloadDir { viewModel.downloadFileTo(it) }
+                },
                 onDownloadFolder = {
                     viewModel.downloadFolder()
                     onDismiss()
+                },
+                onDownloadFolderTo = {
+                    pickDownloadDir { viewModel.downloadFolder(it) }
                 },
                 onShare = { step = ActionStep.SHARE },
                 onMove = {
@@ -125,7 +145,13 @@ fun FileActionSheet(
                     step = ActionStep.MOVE
                 },
                 onRename = { step = ActionStep.RENAME },
-                onDelete = { step = ActionStep.DELETE }
+                onDelete = { step = ActionStep.DELETE },
+                onMultiSelect = onMultiSelect?.let { select ->
+                    {
+                        select()
+                        onDismiss()
+                    }
+                }
             )
 
             ActionStep.MOVE -> MoveStep(
@@ -176,11 +202,14 @@ fun FileActionSheet(
 private fun ActionMenu(
     file: ShareFile,
     onDownload: () -> Unit,
+    onDownloadTo: () -> Unit,
     onDownloadFolder: (() -> Unit)? = null,
+    onDownloadFolderTo: (() -> Unit)? = null,
     onShare: () -> Unit,
     onMove: () -> Unit,
     onRename: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onMultiSelect: (() -> Unit)? = null
 ) {
     Column(
         modifier = Modifier
@@ -231,14 +260,32 @@ private fun ActionMenu(
                 tint = MaterialTheme.colorScheme.primary,
                 onClick = onDownload
             )
-        } else if (onDownloadFolder != null) {
             ActionItem(
-                icon = Icons.Outlined.Download,
-                title = "下载文件夹",
-                desc = "递归下载整个文件夹，保持目录结构",
+                icon = Icons.Outlined.FolderOpen,
+                title = "下载到…",
+                desc = "选择本次保存的文件夹（不改全局设置）",
                 tint = MaterialTheme.colorScheme.primary,
-                onClick = onDownloadFolder
+                onClick = onDownloadTo
             )
+        } else {
+            if (onDownloadFolder != null) {
+                ActionItem(
+                    icon = Icons.Outlined.Download,
+                    title = "下载文件夹",
+                    desc = "递归下载整个文件夹，保持目录结构",
+                    tint = MaterialTheme.colorScheme.primary,
+                    onClick = onDownloadFolder
+                )
+            }
+            if (onDownloadFolderTo != null) {
+                ActionItem(
+                    icon = Icons.Outlined.FolderOpen,
+                    title = "下载文件夹到…",
+                    desc = "选择本次保存的文件夹（不改全局设置）",
+                    tint = MaterialTheme.colorScheme.primary,
+                    onClick = onDownloadFolderTo
+                )
+            }
         }
         ActionItem(
             icon = Icons.Outlined.Share,
@@ -261,6 +308,15 @@ private fun ActionMenu(
             tint = MaterialTheme.colorScheme.primary,
             onClick = onRename
         )
+        if (onMultiSelect != null) {
+            ActionItem(
+                icon = Icons.Outlined.CheckCircle,
+                title = "多选",
+                desc = "勾选多个项目批量下载 / 分享 / 移动 / 删除",
+                tint = MaterialTheme.colorScheme.primary,
+                onClick = onMultiSelect
+            )
+        }
         ActionItem(
             icon = Icons.Outlined.Delete,
             title = "删除",
@@ -340,7 +396,7 @@ private fun MoveStep(
         // 移动目录切换：淡入过渡
         AnimatedContent(
             targetState = moveState,
-            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(140)) },
+            transitionSpec = { Motion.fade(180, 140) },
             label = "moveState"
         ) { s ->
             when (s) {
@@ -589,8 +645,6 @@ internal fun ShareResultDialog(
     info: com.yunx.app.data.network.model.ShareInfo,
     onDismiss: () -> Unit
 ) {
-    // Dialog 内提示宿主（AlertDialog 为独立窗口）
-    val snackbarHostState = rememberGlobalSnackbarHostState()
     // 拼接分享文案（按平台区分：139 / 123 / UC / 迅雷 / 百度 / 115 / 光鸭 / 蓝奏系 / 夸克）
     val platformName = when {
         info.shareUrl.contains("139.com") -> "139网盘"
@@ -641,7 +695,7 @@ internal fun ShareResultDialog(
                     )
                 }
                 // Dialog 内提示（AlertDialog 为独立窗口，需自带 Snackbar 宿主）
-                SnackbarHost(hostState = snackbarHostState)
+                GlobalSnackbarHost()
             }
         },
         confirmButton = {
@@ -796,6 +850,7 @@ internal fun BatchActionSheet(
     val moveState by viewModel.moveUiState.collectAsState()
     val operating = viewModel.isOperating
     val count = viewModel.selected.size
+    val scope = rememberCoroutineScope()
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -812,6 +867,15 @@ internal fun BatchActionSheet(
                 onDownload = {
                     viewModel.downloadSelected()
                     onDismiss()
+                },
+                onDownloadTo = {
+                    scope.launch {
+                        val dir = withContext(Dispatchers.IO) { DesktopActions.pickDirectory() }
+                        if (!dir.isNullOrBlank()) {
+                            viewModel.downloadSelected(dir)
+                            onDismiss()
+                        }
+                    }
                 },
                 onShare = { step = BatchStep.SHARE },
                 onMove = {
@@ -861,6 +925,7 @@ internal fun BatchActionSheet(
 private fun BatchMenu(
     count: Int,
     onDownload: () -> Unit,
+    onDownloadTo: () -> Unit,
     onShare: () -> Unit,
     onMove: () -> Unit,
     onDelete: () -> Unit
@@ -910,6 +975,13 @@ private fun BatchMenu(
             desc = "批量下载到本机",
             tint = MaterialTheme.colorScheme.primary,
             onClick = onDownload
+        )
+        ActionItem(
+            icon = Icons.Outlined.FolderOpen,
+            title = "下载到…",
+            desc = "选择本次保存的文件夹（不改全局设置）",
+            tint = MaterialTheme.colorScheme.primary,
+            onClick = onDownloadTo
         )
         ActionItem(
             icon = Icons.Outlined.Share,
@@ -1065,7 +1137,7 @@ private fun BatchMoveStep(
         // 移动目录切换：淡入过渡
         AnimatedContent(
             targetState = moveState,
-            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(140)) },
+            transitionSpec = { Motion.fade(180, 140) },
             label = "batchMoveState"
         ) { s ->
             when (s) {

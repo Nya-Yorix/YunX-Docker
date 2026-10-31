@@ -47,11 +47,13 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.yunx.app.APP_IS_PREVIEW
 import com.yunx.app.ui.BackHandler
 import com.yunx.app.ui.SnackbarController
 import com.yunx.app.data.update.UpdateChecker
@@ -106,10 +108,10 @@ fun AboutScreen(
             InfoCard(
                 icon = Icons.Outlined.Cloud,
                 title = "应用简介",
-                description = "云析（YunX）是一款网盘分享链接解析与高速下载工具。" +
-                    "粘贴分享链接，登录网盘账号后即可浏览分享内容并直接高速下载文件。\n" +
-                    "桌面移植端：YunX-Desktop 基于 Compose Multiplatform 构建，" +
-                    "将云析完整移植到 Windows 桌面，提供与移动端一致的解析与下载体验。"
+                description = "云析（YunX）是一款网盘分享链接 + 视频链接解析与高速下载工具。" +
+                    "粘贴分享链接或视频短链，登录账号后即可浏览内容、在线预览并直接高速下载。\n" +
+                    "Windows 桌面端：YunX-Desktop 基于 Compose Multiplatform 构建，" +
+                    "在安卓版能力之上补齐桌面交互（右键菜单、文件夹整夹下载、可拖动窗口）。"
             )
             
 
@@ -180,14 +182,32 @@ private fun AppHeader(versionName: String) {
             fontWeight = FontWeight.SemiBold
         )
         Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = "YunX-Desktop · v$versionName",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "YunX-Desktop · v$versionName",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            // 预览版标记：version.txt 第二行写了 preview / beta 时显示（黄色底，浅深色下都醒目）
+            if (APP_IS_PREVIEW) {
+                Spacer(modifier = Modifier.width(6.dp))
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = Color(0xFFFFC107)
+                ) {
+                    Text(
+                        text = "Beta",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF3A2A00),
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+        }
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "网盘链接解析与高速下载",
+            text = "网盘与视频链接解析 · 高速下载",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.outline
         )
@@ -219,7 +239,7 @@ private fun InfoCard(icon: ImageVector, title: String, description: String) {
     }
 }
 
-/** 支持平台卡片 */
+/** 支持平台卡片（网盘 + 视频解析） */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PlatformCard() {
@@ -235,6 +255,7 @@ private fun PlatformCard() {
         "蓝奏云" to Icons.Outlined.Cloud,
         "蓝奏云优享版" to Icons.Outlined.Cloud
     )
+    val videoPlatforms = listOf("哔哩哔哩", "小红书", "抖音", "微博", "快手", "AcFun", "Pixiv")
     SectionCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             CardIcon(Icons.Outlined.Storage)
@@ -275,6 +296,42 @@ private fun PlatformCard() {
                 }
             }
         }
+        Spacer(modifier = Modifier.height(14.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CardIcon(Icons.Outlined.Forum)
+            Spacer(modifier = Modifier.width(14.dp))
+            Column {
+                Text(
+                    text = "视频解析",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "短链 / 口令 / 整段文案粘贴即解析，可选清晰度与图集",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            videoPlatforms.forEach { name ->
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = MaterialTheme.colorScheme.tertiaryContainer
+                ) {
+                    Text(
+                        text = name,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -282,10 +339,14 @@ private fun PlatformCard() {
 @Composable
 private fun FeatureCard() {
     val features = listOf(
-        "一键解析分享链接" to "夸克 / UC / 迅雷 / 百度 / 139 / 123 / 115 / 光鸭 / 蓝奏云 / 蓝奏云优享版 分享直链识别",
-        "高速分片下载" to "多线程并发 + 断点续传，充分利用带宽",
-        "取链即删" to "转存后立即清理，不留残留",
-        "凭证本地化" to "Cookie 加密落库，仅存本机"
+        "网盘分享解析" to "夸克 / UC / 迅雷 / 百度 / 139 / 123 / 115 / 光鸭 / 蓝奏云 / 蓝奏云优享版 分享直链识别",
+        "视频链接解析" to "哔哩哔哩 / 小红书 / 抖音 / 微博 / 快手 / AcFun / Pixiv；短链、口令、整段文案均可",
+        "高速分片下载" to "多线程并发 + 断点续传 + 慢连接自动换线；B 站高清分轨两轨并行后自动合轨",
+        "在线预览" to "ffplay 直读直链、真·边下边播（HLS 原生支持）；没装 FFmpeg 时回退内置播放器并可一键下载",
+        "Live 图" to "微博 / 抖音动图可存为动态照片、静态图片或视频",
+        "多账号与备份" to "网盘与视频平台均支持多账号（主账号 / 备注），认证信息可加密导出 / 导入",
+        "引擎管理" to "FFmpeg（预览 / 合轨）与 Gopeed 内核集中下载·更新·卸载，装到应用私有目录，不改系统环境变量",
+        "凭证本地化" to "Cookie / Token 加密落库，仅存本机"
     )
     SectionCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -328,7 +389,7 @@ private fun FeatureCard() {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TechCard() {
-    val techs = listOf("Kotlin", "Jetpack Compose", "Material 3", "Room", "OkHttp", "KSP")
+    val techs = listOf("Kotlin", "Compose Multiplatform", "Material 3", "SQLite", "OkHttp", "FFmpeg", "JavaFX Media", "JCEF")
     SectionCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             CardIcon(Icons.Outlined.Code)
@@ -474,7 +535,7 @@ private fun CardIcon(icon: ImageVector) {
     }
 }
 
-/** 原安卓项目仓库入口卡片 */
+/** 安卓版仓库入口卡片 */
 @Composable
 private fun GitHubCard() {
     Card(
@@ -510,7 +571,7 @@ private fun GitHubCard() {
             Spacer(modifier = Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "原安卓项目仓库",
+                    text = "安卓版仓库",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium
                 )
@@ -530,7 +591,7 @@ private fun GitHubCard() {
     }
 }
 
-/** PC 移植版仓库入口卡片 */
+/** PC 版仓库入口卡片 */
 @Composable
 private fun DesktopRepoCard() {
     Card(
@@ -566,7 +627,7 @@ private fun DesktopRepoCard() {
             Spacer(modifier = Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "PC 移植版仓库",
+                    text = "PC 版仓库",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium
                 )

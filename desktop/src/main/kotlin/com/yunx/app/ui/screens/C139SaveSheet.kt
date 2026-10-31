@@ -1,10 +1,7 @@
 package com.yunx.app.ui.screens
 
+import com.yunx.app.ui.theme.Motion
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,7 +24,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,7 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.yunx.app.ui.SnackbarController
-import com.yunx.app.ui.rememberGlobalSnackbarHostState
+import com.yunx.app.ui.GlobalSnackbarHost
 import com.yunx.app.ui.resolve.BackToParentItem
 import com.yunx.app.ui.resolve.CrumbBar
 import com.yunx.app.ui.resolve.ShareFileRow
@@ -75,9 +71,6 @@ fun C139SaveSheet(
             resolveViewModel.consumeSaveMessage()
         }
     }
-
-    // ModalBottomSheet 为独立窗口，需自带 Snackbar 宿主
-    val snackbarHostState = rememberGlobalSnackbarHostState()
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -140,7 +133,7 @@ fun C139SaveSheet(
             // 目录切换：淡入过渡（与网盘移动弹窗一致）
             AnimatedContent(
                 targetState = cloudState,
-                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(140)) },
+                transitionSpec = { Motion.fade(180, 140) },
                 label = "c139SaveState"
             ) { s ->
                 when (s) {
@@ -240,7 +233,7 @@ fun C139SaveSheet(
             }
 
             // 转存结果提示（ModalBottomSheet 为独立窗口，需自带 Snackbar 宿主）
-            SnackbarHost(hostState = snackbarHostState)
+            GlobalSnackbarHost()
         }
     }
 }
