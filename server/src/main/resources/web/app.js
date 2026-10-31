@@ -582,6 +582,22 @@ $("settings-form").addEventListener("submit",event => {
   },"settings-status");
 });
 // ---- 账号备份（与桌面版 .yunx 格式互通）----
+function switchBackupTab(tab) {
+  $("backup-tabs").querySelectorAll("button").forEach(b => {
+    const active = b.dataset.backup === tab;
+    b.classList.toggle("active",active); b.setAttribute("aria-pressed",String(active));
+  });
+  $("backup-export-form").hidden = tab !== "export";
+  $("backup-import-form").hidden = tab !== "import";
+  icons();
+}
+$("backup-open").addEventListener("click",() => {
+  $("backup-export-form").reset(); $("backup-import-form").reset();
+  $("backup-status").textContent = ""; $("backup-import-status").textContent = "";
+  switchBackupTab("export"); $("backup-dialog").showModal(); icons();
+});
+$("backup-close").addEventListener("click",() => $("backup-dialog").close());
+$("backup-tabs").querySelectorAll("button").forEach(b => b.addEventListener("click",() => switchBackupTab(b.dataset.backup)));
 $("backup-export-form").addEventListener("submit",event => {
   event.preventDefault(); busy(event.submitter,async () => {
     const result = await api("backup/export",{password:$("backup-export-password").value});
@@ -591,7 +607,8 @@ $("backup-export-form").addEventListener("submit",event => {
     document.body.append(anchor); anchor.click(); anchor.remove();
     URL.revokeObjectURL(url);
     $("backup-export-password").value = "";
-    notice("备份已导出："+result.filename+"，请妥善保管文件与口令",false,"backup-status");
+    $("backup-dialog").close();
+    notice("备份已导出："+result.filename+"，请妥善保管文件与口令");
   },"backup-status");
 });
 $("backup-import-form").addEventListener("submit",event => {
@@ -601,10 +618,11 @@ $("backup-import-form").addEventListener("submit",event => {
     if (file.size > 2 * 1024 * 1024) throw new Error("备份文件过大（上限 2MB）");
     const result = await api("backup/import",{content:await file.text(),password:$("backup-import-password").value});
     $("backup-import-form").reset();
+    $("backup-dialog").close();
     await loadAccounts();
-    notice("已恢复 "+result.imported+" 项凭证，可在账号页查看",false,"backup-status");
+    notice("已恢复 "+result.imported+" 项凭证，可在账号页查看");
     refreshProfiles();
-  },"backup-status");
+  },"backup-import-status");
 });
 $("password-form").addEventListener("submit",event => {
   event.preventDefault(); busy(event.submitter,async () => {

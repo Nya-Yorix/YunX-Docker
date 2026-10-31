@@ -86,22 +86,7 @@
           <p id="settings-status" class="inline-status" role="status"></p><button class="secondary" type="submit"><i data-lucide="save"></i>保存设置</button>
         </form></div>
         <div class="settings-section"><div><h2>账号备份</h2><span class="metadata">CREDENTIAL BACKUP</span></div>
-          <p class="metadata">把已配置的平台凭证导出为口令加密的备份文件（与桌面版 .yunx 格式通用），或从备份文件恢复。口令不存储，丢失后备份无法解密。</p>
-          <div class="backup-grid">
-            <form id="backup-export-form">
-              <label for="backup-export-password">备份口令 · 至少 8 位</label>
-              <div class="password-field"><input id="backup-export-password" type="password" required minlength="8" maxlength="256" autocomplete="new-password"><button class="icon-button reveal" type="button" data-input="backup-export-password" aria-label="显示备份口令" title="显示备份口令"><i data-lucide="eye"></i></button></div>
-              <button class="secondary" type="submit"><i data-lucide="download"></i>导出备份文件</button>
-            </form>
-            <form id="backup-import-form">
-              <label for="backup-file">备份文件 · .yunx 或明文 .json</label>
-              <input id="backup-file" type="file" accept=".yunx,.json,.txt" required>
-              <label for="backup-import-password">备份口令</label>
-              <input id="backup-import-password" type="password" required autocomplete="off">
-              <button class="secondary" type="submit"><i data-lucide="upload"></i>导入并恢复</button>
-            </form>
-          </div>
-          <p id="backup-status" class="inline-status" role="status"></p>
+          <div class="backup-row"><p class="backup-hint">把全部平台凭证导出为口令加密的 .yunx 备份，或从备份文件恢复 —— 与桌面版通用，跨设备迁移不用逐个重填。</p><button id="backup-open" class="secondary" type="button"><i data-lucide="archive"></i>备份与恢复</button></div>
         </div>
         <div class="settings-section"><div><h2>登录与安全</h2><span class="metadata">AUTHENTICATION</span></div><form id="password-form">
           <label for="current-password">当前密码</label><input id="current-password" type="password" autocomplete="current-password" required maxlength="256">
@@ -125,6 +110,29 @@
     </form>
   </dialog>
   <dialog id="confirm-dialog"><div class="dialog-heading"><h2>移除账号</h2></div><p id="confirm-text"></p><div class="toolbar"><button id="confirm-cancel" class="secondary" type="button">取消</button><button id="confirm-remove" class="destructive" type="button">移除</button></div></dialog>
+  <dialog id="backup-dialog">
+    <div class="dialog-heading"><h2>账号备份</h2><button id="backup-close" class="icon-button" type="button" title="关闭" aria-label="关闭"><i data-lucide="x"></i></button></div>
+    <div class="segmented" id="backup-tabs" role="group" aria-label="备份操作">
+      <button type="button" data-backup="export" class="active" aria-pressed="true">导出备份</button>
+      <button type="button" data-backup="import" aria-pressed="false">导入恢复</button>
+    </div>
+    <form id="backup-export-form">
+      <p class="backup-note">导出全部已配置平台凭证（含视频平台）为口令加密的 <span class="mono">.yunx</span> 文件，可在桌面版或另一台服务器导入。口令不会存储 —— <b>丢失后备份无法解密</b>。</p>
+      <label for="backup-export-password">备份口令 · 至少 8 位</label>
+      <div class="password-field"><input id="backup-export-password" type="password" required minlength="8" maxlength="256" autocomplete="new-password"><button class="icon-button reveal" type="button" data-input="backup-export-password" aria-label="显示备份口令" title="显示备份口令"><i data-lucide="eye"></i></button></div>
+      <p id="backup-status" class="inline-status" role="status"></p>
+      <button class="primary wide" type="submit"><i data-lucide="download"></i>导出备份文件</button>
+    </form>
+    <form id="backup-import-form" hidden>
+      <p class="backup-note">从 <span class="mono">.yunx</span>（加密）或 <span class="mono">.json</span>（明文）备份恢复；备份内的同名平台凭证会<b>覆盖</b>当前值，其余平台不受影响。</p>
+      <label for="backup-file">备份文件</label>
+      <input id="backup-file" type="file" accept=".yunx,.json,.txt" required>
+      <label for="backup-import-password">备份口令</label>
+      <input id="backup-import-password" type="password" required autocomplete="off">
+      <p id="backup-import-status" class="inline-status" role="status"></p>
+      <button class="primary wide" type="submit"><i data-lucide="upload"></i>导入并恢复</button>
+    </form>
+  </dialog>
   <dialog id="cloud-action-dialog">
     <div class="dialog-heading"><h2 id="cloud-action-title"></h2><button id="cloud-action-close" class="icon-button" type="button" title="关闭" aria-label="关闭"><i data-lucide="x"></i></button></div>
     <form id="cloud-action-form">
