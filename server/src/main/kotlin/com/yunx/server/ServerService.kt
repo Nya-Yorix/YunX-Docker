@@ -53,27 +53,6 @@ class ServerService(
         var expected = credentials.credential("UC")
         return UCApi().apply { cookieSink = { merged, _ -> credentials.updateCookie("UC", expected, merged); expected = merged } }
     }
-
-    /** 迅雷统一实例：401 自动刷新（回写凭证）+ 网页通道账号本地签名现换 captcha（对齐桌面版 refreshWebCaptcha 语义）。 */
-    private fun xunleiApi(): XunleiApi = XunleiApi().apply {
-        refreshTokenProvider = { deviceId ->
-            runCatching {
-                val account = credentials.get("XUNLEI")
-                refreshToken(account.optString("refreshToken"), deviceId, account.optString("authType"))?.also { fresh ->
-                    credentials.save("XUNLEI", account.put("accessToken", fresh.first).put("refreshToken", fresh.second))
-                }
-            }.getOrNull()
-        }
-        webCaptchaRefresher = { deviceId, action ->
-            val account = credentials.get("XUNLEI")
-            if (account.optString("authType") == XunleiWebCredential.AUTH_TYPE && deviceId == account.optString("deviceId")) {
-                when (val init = initWebCaptcha(deviceId, action)) {
-                    is WebCaptchaInit.Ok -> init.captcha
-                    else -> null
-                }
-            } else null
-        }
-    }
     private val github = GitHubApi(tokenProvider = { credentials.get("GITHUB").optString("accessToken") })
     private val githubBrowser = GitHubBrowser(github)
     val video = VideoService(credentials)
@@ -270,7 +249,16 @@ class ServerService(
             SharePlatform.PAN115 -> Pan115Api().let { api -> name = runCatching { api.fetchNickname(c) }.getOrNull(); api.quotaCheck(c) }
             SharePlatform.PAN123 -> Pan123Api().let { api -> name = runCatching { api.fetchNickname(c) }.getOrNull(); api.quotaCheck(c) }
             SharePlatform.C139 -> C139Api().quotaCheck(c)
-            SharePlatform.XUNLEI -> xunleiApi().quotaCheck(account.optString("accessToken"), account.optString("deviceId"), account.optString("captchaToken"))
+            SharePlatform.XUNLEI -> {
+                val api = XunleiApi().apply {
+                    refreshTokenProvider = { deviceId ->
+                        runCatching {
+                            refreshToken(account.optString("refreshToken"), deviceId, account.optString("authType"))
+                        }.getOrNull()
+                    }
+                }
+                api.quotaCheck(account.optString("accessToken"), account.optString("deviceId"), account.optString("captchaToken"))
+            }
             SharePlatform.GUANGYA -> GuangYaApi().quotaCheck(c, GuangYaDevice(account.optString("deviceId"), account.optString("deviceSign")))
             SharePlatform.LANZOU -> LanzouApi().quotaCheck(c)
             SharePlatform.ILANZOU -> ILanzouApi().quotaCheck(c, account.getString("uuid"))
@@ -328,8 +316,18 @@ class ServerService(
                     more = it.second != null; cursor = it.second.orEmpty(); it.first
                 }
                 SharePlatform.GUANGYA -> GuangYaApi().apply { deviceIdProvider = { a.optString("deviceId") } }.listCloudFiles(c, dir)
-                SharePlatform.XUNLEI -> xunleiApi().getFiles(dir, c, a.optString("deviceId"), a.optString("captchaToken"))
-                    ?: error("无法获取迅雷目录")
+                SharePlatform.XUNLEI -> {
+                    // 网页通道 token 实测同样可列个人目录（quota/列表同走 drive API）；
+                    // 401 自动刷新一次（App 通道用 refreshToken，网页通道刷新失败再报登录过期）
+                    XunleiApi().apply {
+                        refreshTokenProvider = { deviceId ->
+                            runCatching {
+                                refreshToken(a.optString("refreshToken"), deviceId, a.optString("authType"))
+                            }.getOrNull()
+                        }
+                    }.getFiles(dir, c, a.optString("deviceId"), a.optString("captchaToken"))
+                        ?: error("无法获取迅雷目录")
+                }
                 SharePlatform.LANZOU -> LanzouApi().let { api ->
                     val params = api.fetchLoginParams(c) ?: error("凭证无效")
                     api.listCloudFiles(c, params.uid, params.vei, dir)
@@ -418,7 +416,7 @@ class ServerService(
                 SharePlatform.PAN123 -> Pan123Api().getDownloadLink(f, c)
                 SharePlatform.C139 -> C139Api().getDownloadUrl(f.fid, c)
                 SharePlatform.GUANGYA -> GuangYaApi().apply { deviceIdProvider = { a.optString("deviceId") } }.getDownloadLink(c, f)
-                SharePlatform.XUNLEI -> xunleiApi().getFileDetail(f.fid, c, a.optString("deviceId"), a.optString("captchaToken"))
+                SharePlatform.XUNLEI -> XunleiApi().getFileDetail(f.fid, c, a.optString("deviceId"), a.optString("captchaToken"))
                 SharePlatform.LANZOU -> LanzouApi().let { api ->
                     val params = api.fetchLoginParams(c) ?: error("凭证无效")
                     api.getPersonalDownloadLink(c, params.uid, params.vei, f.fid.removePrefix(LanzouConstants.FILE_PREFIX), f.fname)
@@ -452,7 +450,7 @@ class ServerService(
             }
             SharePlatform.LANZOU -> LanzouResolveRepository(LanzouApi())
             SharePlatform.XUNLEI -> {
-                val api = xunleiApi()
+                val api = XunleiApi()
                 XunleiResolveRepository(
                     api, { credential() },
                     { credentials.get(p.name).optString("deviceId").takeIf { it.isNotBlank() } },

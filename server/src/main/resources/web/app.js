@@ -111,7 +111,9 @@ async function view(name) {
   if (name === "tasks") { seenTaskIds.clear(); await refreshTasks(); }
   if (name === "resolve") await loadLibrary();
   if (name === "accounts") { accountsAnimateNext = true; await loadAccounts(); refreshProfiles(); }
-  if (name === "cloud" && !browsers.cloud && cloudPlatform) await loadCloud();
+  // 云视图只从账号卡「浏览文件」进入(总是显式 loadCloud(平台));这里不再按陈旧的
+  // cloudPlatform 自动加载——否则上一个失败平台(如迅雷)会在切换时被重复请求,
+  // 且其抛错会中断调用方后续的 loadCloud,导致"点其他平台却停在迅雷界面"。
   if (name === "settings") {
     const generation = ++settingsGeneration;
     $("settings-form").querySelectorAll("input,button").forEach(node=>node.disabled=true);
@@ -240,7 +242,7 @@ async function refreshProfile(platform) {
   try {
     const profile = await api("account-info",{platform});
     const account = accountStates.find(a => a.platform === platform);
-    if (account?.configured) { account.profile = profile; notice("", false); }
+    if (account?.configured) account.profile = profile;
   } catch (error) {
     const account = accountStates.find(a => a.platform === platform);
     if (account) account.profile = {error:error.message, auth:error.kind === "auth"};
