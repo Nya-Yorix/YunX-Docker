@@ -238,7 +238,8 @@ function renderAccounts() {
 }
 async function refreshProfile(platform) {
   if (profilePending.has(platform)) return;
-  profilePending.add(platform); renderAccounts();
+  profilePending.add(platform);
+  if (!silent) renderAccounts();
   try {
     const profile = await api("account-info",{platform});
     const account = accountStates.find(a => a.platform === platform);
@@ -247,13 +248,21 @@ async function refreshProfile(platform) {
     const account = accountStates.find(a => a.platform === platform);
     if (account) account.profile = {error:error.message, auth:error.kind === "auth"};
     if (loggedIn && activeView === "accounts") notice(names[platform]+"："+error.message,true);
-  } finally { profilePending.delete(platform); renderAccounts(); }
+  } finally {
+    profilePending.delete(platform);
+    // 批量获取容量期间静默(重渲染会冲掉进场 stagger);单独点「刷新容量」时立即反映
+    if (!silent) renderAccounts();
+  }
 }
 async function refreshProfiles() {
+  // 批量拉容量期间不逐个重渲染(否则冲掉进场动画,列表"一起出现"),全部完成后带动画重排一次
+  let changed = false;
   for (const account of accountStates.filter(a => a.configured && !a.profile && a.platform !== "GITHUB")) {
     if (!loggedIn) break;
-    await refreshProfile(account.platform);
+    await refreshProfile(account.platform, {silent:true});
+    changed = true;
   }
+  if (changed) { accountsAnimateNext = true; renderAccounts(); }
 }
 $("confirm-cancel").addEventListener("click", () => $("confirm-dialog").close());
 $("confirm-remove").addEventListener("click", () => busy($("confirm-remove"),async () => {
