@@ -186,6 +186,8 @@ data class DownloadTaskEntity(
     val motionUrl: String = "",
     /** 本任务的下载线程数覆盖（浏览器插件按用户弹窗选择传入）；0 = 跟随平台的线程数设置 */
     val threads: Int = 0,
+    /** 网页「删除文件」：落盘文件已从服务器删除（任务记录保留，由用户手动移除） */
+    val fileDeleted: Boolean = false,
     val createTime: Long = System.currentTimeMillis()
 ) {
     companion object {

@@ -45,13 +45,15 @@
       </section>
       <section id="resolve-view" hidden>
         <div class="page-heading"><div><span class="eyebrow">SHARED WITH YOU</span><h1>分享解析</h1></div></div>
-        <form id="resolve-form" class="resolve-form">
-          <label for="link">链接</label><textarea id="link" rows="3" required placeholder="粘贴网盘分享链接、分享文案或视频链接（哔哩哔哩 / 快手 / 微博 / AcFun / 小红书 / Pixiv）"></textarea>
-          <div class="form-bottom"><div><label for="password">提取码</label><input id="password" maxlength="32" autocomplete="off" placeholder="可留空"></div><button class="primary" type="submit"><i data-lucide="scan-line"></i>解析</button></div>
-        </form>
+        <div class="resolve-top">
+          <form id="resolve-form" class="resolve-form">
+            <label for="link">链接</label><textarea id="link" rows="3" required placeholder="粘贴网盘分享链接、分享文案或视频链接（哔哩哔哩 / 快手 / 微博 / AcFun / 小红书 / Pixiv）"></textarea>
+            <div class="form-bottom"><div><label for="password">提取码</label><input id="password" maxlength="32" autocomplete="off" placeholder="可留空"></div><button class="primary" type="submit"><i data-lucide="scan-line"></i>解析</button></div>
+          </form>
+          <div class="saved-links"><div class="library-panel"><div class="list-toolbar"><h2>保存的链接</h2><div class="segmented" id="library-tabs" role="group" aria-label="保存的链接"><button type="button" data-library="bookmarks" class="active">收藏</button><button type="button" data-library="history">最近解析</button></div></div><div id="library-list" class="library-scroll"></div></div></div>
+        </div>
         <div id="video-result"></div>
         <div id="share-browser"></div>
-        <div class="saved-links"><div class="list-toolbar"><h2>保存的链接</h2><div class="segmented" id="library-tabs" role="group" aria-label="保存的链接"><button type="button" data-library="bookmarks" class="active">收藏</button><button type="button" data-library="history">最近解析</button></div></div><div id="library-list"></div></div>
         <details class="direct-section"><summary>添加直链下载</summary><form id="direct-form">
           <label for="direct-url">下载地址 · 支持 HTTP/HTTPS、磁力与 ed2k 链接</label><input id="direct-url" type="text" required placeholder="https:// 或 magnet:/ed2k: 链接">
           <label for="direct-name">文件名</label><input id="direct-name" placeholder="可留空（磁力 / ed2k 由引擎自动命名）">

@@ -127,6 +127,8 @@ class GitHubBrowser(private val api: GitHubApi) {
         val session = sessions[id] ?: error("GitHub 会话已失效，请重新解析")
         return session.mutex.withLock {
             JSONObject((session.downloads[fid] ?: error("请从已列出的 GitHub 文件中选择")).toString())
+                // 仓库原链接随任务落库（下载任务列表「访问原网盘」按钮）
+                .put("source", "https://github.com/${session.owner}/${session.repo}")
         }
     }
     private fun raw(s: Session, path: String) =

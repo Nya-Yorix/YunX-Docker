@@ -136,6 +136,7 @@ class VideoService(private val credentials: Credentials) {
                     headers = media.headers,
                     size = media.size,
                     platform = platform,
+                    shareUrl = session.result.url,
                     mergeAudioUrl = media.audioUrl,
                     mergeAudioHeaders = media.audioHeaders,
                     motionUrl = media.motionUrl,

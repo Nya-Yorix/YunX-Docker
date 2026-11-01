@@ -10,6 +10,9 @@ import com.yunx.app.data.network.CredentialExpiredException
 import com.yunx.app.data.network.HttpClients
 import com.yunx.app.data.prefs.SettingsRepository
 import com.yunx.app.util.LogRedactor
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import java.io.File
@@ -109,6 +112,7 @@ class WebServer(
                 "/icon.png" -> resource(e, "icon.png", "image/png")
                 "/api/accounts" -> json(e, 200, service.accounts())
                 "/api/tasks" -> json(e, 200, runBlocking { service.tasks() })
+                "/api/task-file" -> serveTaskFile(e)
                 "/api/settings" -> json(e, 200, service.settings())
                 "/api/engine" -> json(e, 200, service.engineStatus())
                 "/api/library" -> json(e, 200, runBlocking { service.library() })
@@ -185,6 +189,52 @@ class WebServer(
         respond(e, 200, type, bytes)
     }
 
+    /**
+     * GET /api/task-file?id=N：把已完成任务的落盘文件流式发给浏览器（会话 Cookie 鉴权）。
+     * 支持单段 Range 断点续传；文件名经 Content-Disposition（UTF-8 * 编码）下发给浏览器保存。
+     */
+    private fun serveTaskFile(e: HttpExchange) {
+        val id = e.requestURI.rawQuery.orEmpty().split('&')
+            .firstOrNull { it.substringBefore('=') == "id" }?.substringAfter('=')?.toLongOrNull()
+        if (id == null) { json(e, 400, JSONObject().put("error", "参数无效")); return }
+        val (file, fileName) = runBlocking { service.completedTaskFile(id) }
+            ?: run { json(e, 404, JSONObject().put("error", "文件不存在或已删除")); return }
+        val length = file.length()
+        var status = 200
+        var start = 0L
+        var end = length - 1
+        e.requestHeaders.getFirst("Range")?.trim()?.let { range ->
+            Regex("^bytes=(\\d*)-(\\d*)$").find(range)?.let { match ->
+                val (s, t) = match.destructured
+                when {
+                    s.isNotEmpty() -> { start = s.toLong(); if (t.isNotEmpty()) end = t.toLong().coerceAtMost(end) }
+                    t.isNotEmpty() -> { start = (length - t.toLong()).coerceAtLeast(0) }
+                }
+                if (start in 0 until length && end in start until length) status = 206 else { start = 0; end = length - 1 }
+            }
+        }
+        e.responseHeaders.set("Content-Type", "application/octet-stream")
+        e.responseHeaders.set("Accept-Ranges", "bytes")
+        val encoded = java.net.URLEncoder.encode(fileName, "UTF-8").replace("+", "%20")
+        val asciiSafe = fileName.replace(Regex("[^\\x20-\\x7e]"), "_").replace("\"", "_")
+        e.responseHeaders.set("Content-Disposition", "attachment; filename=\"$asciiSafe\"; filename*=UTF-8''$encoded")
+        if (status == 206) e.responseHeaders.set("Content-Range", "bytes $start-$end/$length")
+        e.sendResponseHeaders(status, if (length == 0L) -1L else end - start + 1)
+        file.inputStream().use { input ->
+            var toSkip = start
+            while (toSkip > 0) { val n = input.skip(toSkip); if (n <= 0) break; toSkip -= n }
+            var remaining = end - start + 1
+            val buffer = ByteArray(64 * 1024)
+            while (remaining > 0) {
+                val n = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                if (n < 0) break
+                e.responseBody.write(buffer, 0, n)
+                remaining -= n
+            }
+            e.responseBody.flush()
+        }
+    }
+
     private fun json(e: HttpExchange, status: Int, value: Any) =
         respond(e, status, "application/json; charset=utf-8", value.toString().toByteArray(Charsets.UTF_8))
 
@@ -258,4 +308,7 @@ fun main() {
     })
     server.start()
     println("YunX server listening on port ${server.port}; downloads: $downloadDir")
+    // 启动即后台预取各平台容量/登录态并缓存(登录失败也缓存、不自动重试,用户更新凭证后再校验),
+    // 用户打开账号页直接呈现结果,无需现场等待
+    CoroutineScope(Dispatchers.IO).launch { service.prefetchAccountInfos() }
 }

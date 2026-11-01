@@ -165,6 +165,8 @@ interface DownloadTaskDao {
     suspend fun updateDirect(id: Long, partPath: String, mode: Int)
     /** 磁力任务完成时把占位显示名换成真正的种子名（种子名要等引擎解析出元数据才有） */
     suspend fun updateFileName(id: Long, name: String)
+    /** 网页「删除文件」：落盘文件已从服务器删除（任务记录保留，前端据此把文件名标红划掉） */
+    suspend fun setFileDeleted(id: Long, deleted: Boolean)
     /** 还在外部引擎里执行、需要轮询同步进度的任务（engineTaskId 非空且未完成/未失败） */
     suspend fun listSyncableEngineTasks(): List<DownloadTaskEntity>
 }

@@ -168,6 +168,12 @@ class AppDatabase private constructor(private val conn: Connection) {
                             it.execute("ALTER TABLE download_task ADD COLUMN threads INTEGER NOT NULL DEFAULT 0")
                         }
                     }
+                    // 迁移：网页「删除文件」标记（文件已从服务器删除，任务记录保留）
+                    runCatching {
+                        conn.createStatement().use {
+                            it.execute("ALTER TABLE download_task ADD COLUMN fileDeleted INTEGER NOT NULL DEFAULT 0")
+                        }
+                    }
                     // 迁移：旧库缺少 authType 列时补上（迅雷登录方式；空串=App 通道，webToken=网页登录）
                     runCatching {
                         conn.createStatement().use {
@@ -274,7 +280,7 @@ class AppDatabase private constructor(private val conn: Connection) {
             "CREATE TABLE IF NOT EXISTS ilanzou_account (id TEXT PRIMARY KEY NOT NULL, appToken TEXT NOT NULL, uuid TEXT NOT NULL, account TEXT NOT NULL, password TEXT NOT NULL, userId TEXT NOT NULL, nickname TEXT NOT NULL, updatedAt INTEGER NOT NULL, isPrimary INTEGER NOT NULL DEFAULT 1, remark TEXT NOT NULL DEFAULT '')",
             "CREATE TABLE IF NOT EXISTS lanzou_account (id TEXT PRIMARY KEY NOT NULL, cookie TEXT NOT NULL, nickname TEXT NOT NULL, updatedAt INTEGER NOT NULL, isPrimary INTEGER NOT NULL DEFAULT 1, remark TEXT NOT NULL DEFAULT '')",
             "CREATE TABLE IF NOT EXISTS video_account (id TEXT PRIMARY KEY NOT NULL, platform TEXT NOT NULL, cookie TEXT NOT NULL, nickname TEXT NOT NULL, updatedAt INTEGER NOT NULL, isPrimary INTEGER NOT NULL DEFAULT 1, remark TEXT NOT NULL DEFAULT '')",
-            "CREATE TABLE IF NOT EXISTS download_task (id INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT NOT NULL, fileName TEXT NOT NULL, totalSize INTEGER NOT NULL, downloadedSize INTEGER NOT NULL, status INTEGER NOT NULL, errorMsg TEXT NOT NULL, savePath TEXT NOT NULL, requestHeadersJson TEXT NOT NULL DEFAULT '{}', chunkCount INTEGER NOT NULL DEFAULT 0, plannedTotalSize INTEGER NOT NULL DEFAULT 0, cleanupId TEXT NOT NULL DEFAULT '', platform TEXT NOT NULL DEFAULT '', shareUrl TEXT NOT NULL DEFAULT '', avgSpeed INTEGER NOT NULL DEFAULT 0, engineTaskId TEXT NOT NULL DEFAULT '', altSourcesJson TEXT NOT NULL DEFAULT '', saveDir TEXT NOT NULL DEFAULT '', directPart TEXT NOT NULL DEFAULT '', directMode INTEGER NOT NULL DEFAULT 0, mergeAudioUrl TEXT NOT NULL DEFAULT '', mergeAudioHeadersJson TEXT NOT NULL DEFAULT '', motionUrl TEXT NOT NULL DEFAULT '', threads INTEGER NOT NULL DEFAULT 0, createTime INTEGER NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS download_task (id INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT NOT NULL, fileName TEXT NOT NULL, totalSize INTEGER NOT NULL, downloadedSize INTEGER NOT NULL, status INTEGER NOT NULL, errorMsg TEXT NOT NULL, savePath TEXT NOT NULL, requestHeadersJson TEXT NOT NULL DEFAULT '{}', chunkCount INTEGER NOT NULL DEFAULT 0, plannedTotalSize INTEGER NOT NULL DEFAULT 0, cleanupId TEXT NOT NULL DEFAULT '', platform TEXT NOT NULL DEFAULT '', shareUrl TEXT NOT NULL DEFAULT '', avgSpeed INTEGER NOT NULL DEFAULT 0, engineTaskId TEXT NOT NULL DEFAULT '', altSourcesJson TEXT NOT NULL DEFAULT '', saveDir TEXT NOT NULL DEFAULT '', directPart TEXT NOT NULL DEFAULT '', directMode INTEGER NOT NULL DEFAULT 0, mergeAudioUrl TEXT NOT NULL DEFAULT '', mergeAudioHeadersJson TEXT NOT NULL DEFAULT '', motionUrl TEXT NOT NULL DEFAULT '', threads INTEGER NOT NULL DEFAULT 0, fileDeleted INTEGER NOT NULL DEFAULT 0, createTime INTEGER NOT NULL)",
             "CREATE TABLE IF NOT EXISTS bookmark (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, link TEXT NOT NULL, title TEXT NOT NULL, platform TEXT NOT NULL, pwd TEXT NOT NULL, category TEXT NOT NULL, createTime INTEGER NOT NULL)",
             "CREATE TABLE IF NOT EXISTS link_history (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, url TEXT NOT NULL, title TEXT NOT NULL, platform TEXT NOT NULL, pwd TEXT NOT NULL, createTime INTEGER NOT NULL)"
         )
@@ -982,6 +988,8 @@ private class JdbcDownloadTaskDao(private val conn: Connection) : DownloadTaskDa
         motionUrl = runCatching { rs.getString("motionUrl") }.getOrDefault(""),
         // 浏览器插件线程数覆盖：旧库迁移期间列可能尚未添加（0 = 跟随平台设置）
         threads = runCatching { rs.getInt("threads") }.getOrDefault(0),
+        // 网页「删除文件」标记：旧库迁移期间列可能尚未添加（false = 文件还在）
+        fileDeleted = runCatching { rs.getInt("fileDeleted") == 1 }.getOrDefault(false),
         createTime = rs.getLong("createTime")
     )
 
@@ -992,8 +1000,8 @@ private class JdbcDownloadTaskDao(private val conn: Connection) : DownloadTaskDa
             conn.prepareStatement(
                 "INSERT INTO download_task(url,fileName,totalSize,downloadedSize,status,errorMsg,savePath," +
                     "requestHeadersJson,chunkCount,plannedTotalSize,cleanupId,platform,shareUrl,avgSpeed,engineTaskId," +
-                    "altSourcesJson,saveDir,directPart,directMode,mergeAudioUrl,mergeAudioHeadersJson,motionUrl,threads,createTime) " +
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "altSourcesJson,saveDir,directPart,directMode,mergeAudioUrl,mergeAudioHeadersJson,motionUrl,threads,fileDeleted,createTime) " +
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 Statement.RETURN_GENERATED_KEYS
             ).use { ps ->
                 ps.setString(1, task.url)
@@ -1019,7 +1027,8 @@ private class JdbcDownloadTaskDao(private val conn: Connection) : DownloadTaskDa
                 ps.setString(21, task.mergeAudioHeadersJson)
                 ps.setString(22, task.motionUrl)
                 ps.setInt(23, task.threads)
-                ps.setLong(24, task.createTime)
+                ps.setInt(24, if (task.fileDeleted) 1 else 0)
+                ps.setLong(25, task.createTime)
                 ps.executeUpdate()
                 ps.generatedKeys.use { gk -> if (gk.next()) gk.getLong(1) else task.id }
             }
@@ -1174,6 +1183,17 @@ private class JdbcDownloadTaskDao(private val conn: Connection) : DownloadTaskDa
         synchronized(conn) {
             conn.prepareStatement("UPDATE download_task SET fileName = ? WHERE id = ?").use { ps ->
                 ps.setString(1, name)
+                ps.setLong(2, id)
+                ps.executeUpdate()
+            }
+        }
+        reload()
+    }
+
+    override suspend fun setFileDeleted(id: Long, deleted: Boolean) = dbIo {
+        synchronized(conn) {
+            conn.prepareStatement("UPDATE download_task SET fileDeleted = ? WHERE id = ?").use { ps ->
+                ps.setInt(1, if (deleted) 1 else 0)
                 ps.setLong(2, id)
                 ps.executeUpdate()
             }

@@ -1074,6 +1074,25 @@ class DownloadManager(
     }
 
     /**
+     * 网页「删除文件」（垃圾桶按钮）：删除已完成任务在服务器上的落盘文件并打上
+     * fileDeleted 标记（任务记录保留，由用户手动移除）。
+     * 路径守卫：仅允许删除下载目录（或任务级目录覆盖）内的文件；文件已不存在视为成功（幂等）。
+     */
+    suspend fun deleteCompletedFile(id: Long): Boolean {
+        val task = dao.get(id) ?: error("任务不存在")
+        if (task.status != DownloadTaskEntity.STATUS_COMPLETED) error("只有已完成的任务才能删除已下载文件")
+        val target = runCatching { File(task.savePath).canonicalFile }.getOrNull()
+            ?: error("文件路径无效")
+        val base = runCatching { File(task.saveDir.ifBlank { saveDirProvider() ?: "" }).canonicalFile }.getOrNull()
+        if (base != null && base.path.isNotBlank() && !target.path.startsWith(base.path + File.separator)) {
+            error("文件不在下载目录内，拒绝删除")
+        }
+        val deleted = !target.isFile || withContext(Dispatchers.IO) { runCatching { target.delete() }.getOrDefault(false) }
+        if (deleted) dao.setFileDeleted(id, true)
+        return deleted
+    }
+
+    /**
      * 删除任务：取消下载 + 清 DB + 清 part 文件。
      * @param deleteLocal 同时删除已保存到本地的文件（savePath）
      */

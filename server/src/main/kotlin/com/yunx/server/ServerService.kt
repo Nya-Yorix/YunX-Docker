@@ -2,6 +2,7 @@ package com.yunx.server
 
 import com.yunx.app.data.db.AppDatabase
 import com.yunx.app.data.db.BookmarkEntity
+import com.yunx.app.data.db.DownloadTaskEntity
 import com.yunx.app.data.db.LinkHistoryEntity
 import com.yunx.app.data.download.DownloadManager
 import com.yunx.app.data.download.DownloadPlatform
@@ -12,12 +13,14 @@ import com.yunx.app.data.network.model.*
 import com.yunx.app.data.network.video.VideoLinkParser
 import com.yunx.app.data.prefs.SettingsRepository
 import com.yunx.app.data.repository.*
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.net.URI
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -248,6 +251,18 @@ class ServerService(
         }
         return library()
     }
+    /** 启动后台预取:逐平台校验并缓存容量/登录态(失败结果由 accountInfo 一并缓存),
+     *  用户打开账号页即直接呈现,无需现场等待。GITHUB/LANZOU 无容量概念不取(与前端批量口径一致)。 */
+    suspend fun prefetchAccountInfos() {
+        suspend fun prefetch(key: String) {
+            if (credentials.credential(key).isBlank()) return
+            runCatching { accountInfo(JSONObject().put("platform", key)) }
+            delay(300)   // 轻微间隔,避免启动瞬间并发打满上游
+        }
+        SharePlatform.entries.forEach { p -> if (p != SharePlatform.LANZOU) prefetch(p.name) }   // GITHUB 校验返回登录名作昵称;LANZOU 无昵称无容量不取
+        video.platforms.keys.forEach { key -> prefetch(key) }
+    }
+
     suspend fun accountInfo(body: JSONObject): JSONObject = withTimeout(25000) {
         val requested = body.getString("platform")
         if (video.platforms.containsKey(requested)) {
@@ -266,9 +281,20 @@ class ServerService(
         val checked = drives.forPlatform(p).credentialCheck()
         val check: CredentialCheck = checked.check
         val name: String? = checked.nickname
-        if (check is CredentialCheck.Invalid) throw CredentialExpiredException(check.message)
+        // 失败结果也写入缓存并随账号列表下发:登录失败的平台在页面重开时不再自动重试,
+        // 等用户更新凭证(saveAccount/importAccounts 会清缓存)后的下一次读取即重试
+        if (check is CredentialCheck.Invalid) {
+            profiles[p.name] = JSONObject().put("error", check.message).put("auth", true)
+                .put("checkedAt", System.currentTimeMillis())
+            throw CredentialExpiredException(check.message)
+        }
         // Unknown 保留上游细节（卡片显示归纳文案,轻提示里可见真实原因;也供假 token 探测提取码值）
-        if (check is CredentialCheck.Unknown) throw IllegalStateException("暂时无法验证，请稍后重试（${check.message.take(160)}）")
+        if (check is CredentialCheck.Unknown) {
+            val message = "暂时无法验证，请稍后重试（${check.message.take(160)}）"
+            profiles[p.name] = JSONObject().put("error", message).put("auth", false)
+                .put("checkedAt", System.currentTimeMillis())
+            throw IllegalStateException(message)
+        }
         val quota: QuotaInfo? = (check as? CredentialCheck.Valid)?.quota
         val result = JSONObject().put("nickname", name ?: account.optString("label"))
             .put("checkedAt", System.currentTimeMillis()).put("available", quota != null || name != null)
@@ -420,9 +446,14 @@ class ServerService(
         if (parsed == null) {
             // 同一输入栏自动分流：不是网盘分享链接时，先试视频/图文链接，再落 GitHub/直连
             if (VideoLinkParser.parse(text) != null) {
-                return@withLock video.parse(body).put("kind", "video")
+                val result = video.parse(body).put("kind", "video")
+                recordHistory(text, result.optString("title"), result.optString("platform"), pwd = "")
+                return@withLock result
             }
-            return@withLock githubResolve(text)
+            val github = githubResolve(text)
+            // 标题回退：仓库/账号解析带 title；GitHub 直链只有 filename，退回链接本身
+            recordHistory(text, github.optString("title").ifBlank { text }, "GITHUB", pwd = "")
+            return@withLock github
         }
         sessions.entries.removeIf { System.currentTimeMillis() - it.value.created > 3_600_000 }
         require(sessions.size < 100) { "分享会话过多，请稍后再试" }
@@ -438,11 +469,16 @@ class ServerService(
         val id = UUID.randomUUID().toString()
         val response = list(session, root).put("sessionId", id)
         sessions[id] = session
-        val history = db.linkHistoryDao().observeAll().first()
-        history.filter { it.url == text }.forEach { db.linkHistoryDao().delete(it.id) }
-        db.linkHistoryDao().insert(LinkHistoryEntity(url = text, title = share.title, platform = parsed.platform.name, pwd = pwd))
-        db.linkHistoryDao().observeAll().first().drop(100).forEach { db.linkHistoryDao().delete(it.id) }
+        recordHistory(text, share.title, parsed.platform.name, pwd)
         response
+    }
+
+    /** 解析成功即记入「最近解析」(同链接去重置顶,保留最近 100 条);网盘分享/视频/GitHub 三类共用 */
+    private suspend fun recordHistory(url: String, title: String, platform: String, pwd: String) {
+        val history = db.linkHistoryDao().observeAll().first()
+        history.filter { it.url == url }.forEach { db.linkHistoryDao().delete(it.id) }
+        db.linkHistoryDao().insert(LinkHistoryEntity(url = url, title = title, platform = platform, pwd = pwd))
+        db.linkHistoryDao().observeAll().first().drop(100).forEach { db.linkHistoryDao().delete(it.id) }
     }
 
     private suspend fun list(s: BrowserSession, directory: String): JSONObject {
@@ -465,7 +501,7 @@ class ServerService(
         if (githubBrowser.contains(body.getString("sessionId"))) {
             val file = githubBrowser.download(body.getString("sessionId"), body.getString("fid"))
             return JSONObject().put("id", downloads.enqueue(file.getString("url"), file.getString("name"),
-                emptyMap(), file.optLong("size"), "github", threads = threads))
+                emptyMap(), file.optLong("size"), "github", shareUrl = file.optString("source"), threads = threads))
         }
         val s = sessions[body.getString("sessionId")] ?: error("分享会话已失效，请重新解析")
         return s.mutex.withLock {
@@ -522,7 +558,9 @@ class ServerService(
             .put("downloaded", t.downloadedSize).put("total", t.totalSize)
             .put("speed", stats?.speed ?: 0).put("mergePercent", stats?.mergePercent ?: -1)
             .put("seeds", stats?.seeds ?: -1).put("peers", stats?.peers ?: -1)
+            .put("fileDeleted", t.fileDeleted)
             .put("error", t.errorMsg).put("savePath", t.savePath)
+            .put("shareUrl", t.shareUrl)
     })
 
     suspend fun taskAction(body: JSONObject) {
@@ -538,8 +576,17 @@ class ServerService(
                 downloads.start(id)
             }
             "remove" -> downloads.remove(id, false)
+            "delete-file" -> downloads.deleteCompletedFile(id)
             else -> error("未知任务操作")
         }
+    }
+
+    /** 已完成任务的落盘文件（网页「下载」按钮供浏览器拉取）；未完成/已删除/文件不存在返回 null */
+    suspend fun completedTaskFile(id: Long): Pair<File, String>? {
+        val task = db.downloadTaskDao().get(id) ?: return null
+        if (task.status != DownloadTaskEntity.STATUS_COMPLETED || task.fileDeleted) return null
+        val file = runCatching { File(task.savePath).canonicalFile }.getOrNull() ?: return null
+        return if (file.isFile) file to task.fileName else null
     }
 
     private suspend fun githubResolve(text: String): JSONObject {
