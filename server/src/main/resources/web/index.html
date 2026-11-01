@@ -89,7 +89,7 @@
         <div class="settings-section"><div><h2>账号备份</h2><span class="metadata">CREDENTIAL BACKUP</span></div>
           <div class="backup-row"><p class="backup-hint">把全部平台凭证导出为口令加密的 .yunx 备份，或从备份文件恢复 —— 与桌面版通用，跨设备迁移不用逐个重填。</p><button id="backup-open" class="secondary" type="button"><i data-lucide="archive"></i>备份与恢复</button></div>
         </div>
-        <div class="settings-section"><div><h2>登录与安全</h2><span class="metadata">AUTHENTICATION</span></div><form id="password-form">
+        <div class="settings-section"><div><h2>登录与安全</h2><span class="metadata">AUTHENTICATION</span></div><p id="password-managed" class="password-managed" hidden>密码由部署配置 YUNX_PASSWORD 管理。</p><form id="password-form">
           <label for="current-password">当前密码</label><input id="current-password" type="password" autocomplete="current-password" required maxlength="256">
           <label for="new-password">新密码</label><div class="password-field"><input id="new-password" type="password" autocomplete="new-password" required minlength="12" maxlength="256"><button class="icon-button reveal" type="button" data-input="new-password" aria-label="显示新密码" title="显示新密码"><i data-lucide="eye"></i></button></div>
           <label for="confirm-password">确认新密码</label><input id="confirm-password" type="password" autocomplete="new-password" required minlength="12" maxlength="256">

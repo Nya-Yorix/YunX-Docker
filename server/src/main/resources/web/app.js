@@ -126,10 +126,14 @@ function showLogin(message = "") {
 async function showApp(session) {
   loggedIn = true; $("login-view").hidden = true; $("app").hidden = false;
   $("current-user").textContent = session.username;
-  $("password-form").querySelectorAll("input,button").forEach(node => node.disabled = session.passwordManaged);
-  notice(session.passwordManaged ? "密码由部署配置 YUNX_PASSWORD 管理。" : "", false, "password-status");
+  // 部署托管密码(YUNX_PASSWORD):隐藏改密表单,改为静态说明;否则照常显示
+  const managed = !!session.passwordManaged;
+  $("password-form").hidden = managed;
+  $("password-managed").hidden = !managed;
   await loadAccounts();
   await view(activeView);
+  // 提示放在切页之后:view() 会清空 toast,先切后示才能存活
+  if (managed) notice("密码由部署配置 YUNX_PASSWORD 管理。", false);
 }
 async function view(name) {
   activeView = name;
