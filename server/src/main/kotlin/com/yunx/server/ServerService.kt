@@ -1,5 +1,6 @@
 package com.yunx.server
 
+import com.yunx.app.AppContext
 import com.yunx.app.data.db.AppDatabase
 import com.yunx.app.data.db.BookmarkEntity
 import com.yunx.app.data.db.DownloadTaskEntity
@@ -144,6 +145,25 @@ class ServerService(
             .put("platformThreads", platformThreads())
             .put("downloadEngine", settingsRepo.downloadEngine)
             .put("btTrackers", settingsRepo.btTrackers)
+            .put("storage", storageInfo())
+    }
+
+    /**
+     * 设置页「服务器存储」数据：实际路径与可用空间。
+     *
+     * 网页版不提供修改目录（目录由部署挂载 / 环境变量决定），这里只做展示，
+     * 让磁盘不足的提示能落到具体位置；真正的调整方式写在页面说明里。
+     */
+    private fun storageInfo(): JSONObject {
+        val cache = AppContext.cacheDir
+        val download = File(System.getenv("YUNX_DOWNLOAD_DIR") ?: "/downloads").canonicalFile
+        fun free(dir: File): Long = runCatching { dir.usableSpace }.getOrDefault(0L)
+        return JSONObject()
+            .put("dataDir", AppContext.dataDir.absolutePath)
+            .put("cacheDir", cache.absolutePath)
+            .put("cacheFreeBytes", free(cache))
+            .put("downloadDir", download.absolutePath)
+            .put("downloadFreeBytes", free(download))
     }
 
     /** SharePlatform → 下载线程配置键（DownloadPlatform 常量为小写字符串） */

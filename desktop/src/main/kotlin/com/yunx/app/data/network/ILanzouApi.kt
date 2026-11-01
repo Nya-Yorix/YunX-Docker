@@ -112,7 +112,10 @@ class ILanzouApi(
             val used = map.optLong("usedSize", 0L) * 1024L
             val total = (map.optLong("totalSize", 0L) + map.optLong("vipSize", 0L) +
                 map.optLong("rewardSize", 0L)) * 1024L
-            CredentialCheck.Valid(null, QuotaInfo(used = used, total = total))
+            val nickname = firstNonBlank(
+                map.optString("nickName"), map.optString("nickname"), map.optString("account")
+            )
+            CredentialCheck.Valid(nickname.takeIf { it.isNotBlank() }, QuotaInfo(used = used, total = total))
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {

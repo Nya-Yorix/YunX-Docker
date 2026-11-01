@@ -579,7 +579,9 @@ class C139Api(
                 data.optJSONArray("quotaList")?.optJSONObject(0)?.optLong("usedSize")?.times(1024L * 1024L)
                     ?: (total - free * 1024L * 1024L)
             }
-            CredentialCheck.Valid(null, QuotaInfo(used = used, total = total))
+            // 用户名:Basic 认证内携带的账号(手机号),脱敏展示(139 官方同款 3+****+4)
+            val masked = account.takeIf { it.length >= 8 }?.let { it.take(3) + "****" + it.takeLast(4) } ?: account
+            CredentialCheck.Valid(masked, QuotaInfo(used = used, total = total))
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {

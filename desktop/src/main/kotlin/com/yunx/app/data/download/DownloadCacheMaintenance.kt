@@ -42,6 +42,18 @@ object DownloadCacheMaintenance {
     /** 空间不足（可预期、不应重试）——任务直接失败并展示这条原因 */
     class LowDiskSpaceException(message: String) : IllegalStateException(message)
 
+    /**
+     * 空间不足时的建议文案。参数是「下载缓存目录」或「下载保存目录」。
+     *
+     * 桌面版有「设置 → 储存目录」页面，默认指向那里；网页版没有该页面，
+     * 由服务端启动时替换成面向部署的说明（见 server/Main.kt），
+     * 避免提示用户去一个不存在的设置项。
+     */
+    @Volatile
+    var storageHint: (String) -> String = { target ->
+        "请到「设置 → 储存目录」更换$target，或清理磁盘后重试。"
+    }
+
     private data class ChunkDir(val dir: File, val taskId: Long)
 
     /**
@@ -249,7 +261,7 @@ object DownloadCacheMaintenance {
         if (cacheFree != null) {
             if (cacheFree < MIN_FREE_BYTES) {
                 return "缓存目录可用空间不足（剩余 ${formatBytes(cacheFree)}）：" +
-                    "请到「设置 → 储存目录」更换下载缓存目录，或清理磁盘后重试。"
+                    storageHint("下载缓存目录")
             }
             // 本任务还需写入缓存的字节：
             // - 不同盘：total - existing（只差没下完的分片）；
@@ -264,18 +276,18 @@ object DownloadCacheMaintenance {
                 return "缓存目录所在磁盘空间不足：本次需要约 ${formatBytes(need)}，" +
                     "当前可用 ${formatBytes(cacheFree)}。" +
                     (if (reservedCacheBytes > 0) "（已为其它进行中的任务预留 ${formatBytes(reservedCacheBytes)}）" else "") +
-                    "请到「设置 → 储存目录」更换下载缓存目录，或清理磁盘后重试。"
+                    storageHint("下载缓存目录")
             }
         }
 
         if (!sameVolume && destFree != null) {
             if (destFree < MIN_FREE_BYTES) {
                 return "下载目录可用空间不足（剩余 ${formatBytes(destFree)}）：" +
-                    "请到「设置 → 储存目录」更换下载保存目录，或清理磁盘后重试。"
+                    storageHint("下载保存目录")
             }
             if (total > 0 && destFree < needBytes(total, 1)) {
                 return "下载目录所在磁盘空间不足：本次需要约 ${formatBytes(needBytes(total, 1))}，" +
-                    "当前可用 ${formatBytes(destFree)}。请到「设置 → 储存目录」更换下载保存目录，或清理磁盘后重试。"
+                    "当前可用 ${formatBytes(destFree)}。" + storageHint("下载保存目录")
             }
         }
         return null
@@ -294,11 +306,11 @@ object DownloadCacheMaintenance {
         val free = freeSpace(saveDir) ?: return null
         if (free < MIN_FREE_BYTES) {
             return "下载目录可用空间不足（剩余 ${formatBytes(free)}）：" +
-                "请到「设置 → 储存目录」更换下载保存目录，或清理磁盘后重试。"
+                storageHint("下载保存目录")
         }
         if (total > 0 && free < needBytes(total, 1)) {
             return "下载目录所在磁盘空间不足（直写模式）：本次需要约 ${formatBytes(needBytes(total, 1))}，" +
-                "当前可用 ${formatBytes(free)}。请清理目标磁盘或更换下载保存目录后重试。"
+                "当前可用 ${formatBytes(free)}。" + storageHint("下载保存目录")
         }
         return null
     }

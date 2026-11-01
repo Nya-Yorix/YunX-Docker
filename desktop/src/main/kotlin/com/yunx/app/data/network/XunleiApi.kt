@@ -685,8 +685,9 @@ class XunleiApi(
                 panRequest("${XunleiConstants.PAN_BASE}/drive/v1/about", accessToken, deviceId, t)
             }) { data ->
                 val quota = data.optJSONObject("quota")
+                val nickname = data.optJSONObject("user")?.optString("name")?.takeIf { it.isNotBlank() }
                 CredentialCheck.Valid(
-                    null,
+                    nickname,
                     QuotaInfo(
                         used = quota?.optLong("usage") ?: 0L,
                         total = quota?.optLong("limit") ?: 0L,

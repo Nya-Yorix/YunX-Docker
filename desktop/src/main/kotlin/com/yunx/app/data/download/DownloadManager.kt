@@ -980,7 +980,7 @@ class DownloadManager(
                             )
                             "磁盘空间不足，下载已停止；已清理该任务的分片缓存（释放 " +
                                 "${DownloadCacheMaintenance.formatBytes(freed)}）。" +
-                                "请到「设置 → 储存目录」更换缓存目录，或清理磁盘后重试。"
+                                DownloadCacheMaintenance.storageHint("下载缓存目录")
                         } else {
                             e.message ?: e.javaClass.simpleName
                         }

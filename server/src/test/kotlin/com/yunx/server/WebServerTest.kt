@@ -215,6 +215,26 @@ class WebServerTest {
     }
 
     @Test
+    fun `tasks api exposes share url for share-origin downloads`() = runBlocking {
+        // 分享/GitHub/视频下载入队时把原链接落到任务行(shareUrl);直链任务没有 → 前端不渲染「访问原网盘」
+        val db = AppDatabase.get()
+        val withShare = db.downloadTaskDao().insert(
+            com.yunx.app.data.db.DownloadTaskEntity(url = "https://dl.example/file.bin", fileName = "share.bin",
+                platform = "quark", shareUrl = "https://pan.quark.cn/s/testshare"))
+        val withoutShare = db.downloadTaskDao().insert(
+            com.yunx.app.data.db.DownloadTaskEntity(url = "https://dl.example/direct.bin", fileName = "direct.bin"))
+        val tasks = JSONArray(request("/api/tasks").second).let { json ->
+            (0 until json.length()).map { json.getJSONObject(it) }
+        }
+        val shared = tasks.single { it.getLong("id") == withShare }
+        val direct = tasks.single { it.getLong("id") == withoutShare }
+        assertEquals("https://pan.quark.cn/s/testshare", shared.getString("shareUrl"))
+        assertEquals("", direct.getString("shareUrl"))
+        assertEquals(200, request("/api/tasks", """{"id":$withShare,"action":"remove"}""").first)
+        assertEquals(200, request("/api/tasks", """{"id":$withoutShare,"action":"remove"}""").first)
+    }
+
+    @Test
     fun `real range download survives pause and resumes to identical bytes`() = runBlocking {
         val data = ByteArray(2 * 1024 * 1024) { (it % 251).toByte() }
         val source = MockWebServer()

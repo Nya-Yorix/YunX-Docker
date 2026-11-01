@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f2f1ee" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0a0b" media="(prefers-color-scheme: dark)">
   <title>云析 YunX</title>
   <link rel="icon" href="/icon.png">
   <link rel="stylesheet" href="/style.css">
@@ -14,9 +16,14 @@
   <section id="login-view" class="login" hidden>
     <div class="login-identity"><img src="/icon.png" alt=""><span>YUNX / SERVER</span><button class="icon-button theme-toggle" type="button" aria-label="切换明暗模式" title="切换明暗模式"><i data-lucide="sun-moon"></i></button></div>
     <div class="login-main">
-      <div class="login-title"><span class="eyebrow">PERSONAL CLOUD / 01</span><h1>云析<br><span>你的云端工作台。</span></h1><div class="login-mark" aria-hidden="true">Y / X</div></div>
+      <div class="login-title">
+        <span class="eyebrow">PERSONAL CLOUD / 01</span>
+        <h1>云析<span>你的云端工作台 —— 在自己的 NAS 上浏览网盘、解析分享、持续下载。</span></h1>
+        <div class="login-mark" aria-hidden="true">Y / X</div>
+      </div>
       <form id="login-form">
         <h2>登录 YunX</h2>
+        <p class="login-intro">使用这台服务器上的账号进入工作台。</p>
         <label for="login-username">用户名</label><input id="login-username" autocomplete="username" required value="admin" maxlength="128">
         <label for="login-password">密码</label><div class="password-field"><input id="login-password" type="password" autocomplete="current-password" required maxlength="256"><button class="icon-button reveal" type="button" data-input="login-password" aria-label="显示密码" title="显示密码"><i data-lucide="eye"></i></button></div>
         <p id="login-status" class="inline-status" role="status"></p>
@@ -29,49 +36,65 @@
     <aside class="sidebar">
       <a class="brand" href="/"><img src="/icon.png" alt=""><span>云析<small>YUNX / SERVER</small></span></a>
       <nav aria-label="主导航">
-        <button type="button" data-view="resolve"><i data-lucide="link"></i><span>解析</span></button>
-        <button type="button" data-view="tasks"><i data-lucide="arrow-down-to-line"></i><span>下载</span><span id="task-count" class="nav-count">0</span></button>
-        <button type="button" data-view="accounts"><i data-lucide="users-round"></i><span>账号</span></button>
+        <span class="nav-group">工作台</span>
+        <button type="button" data-view="resolve"><i data-lucide="link-2"></i><span>分享解析</span></button>
+        <button type="button" data-view="tasks"><i data-lucide="arrow-down-to-line"></i><span>下载</span><span id="task-count" class="nav-count"></span></button>
+        <span class="nav-group">管理</span>
+        <button type="button" data-view="accounts"><i data-lucide="users-round"></i><span>网盘账号</span></button>
         <button type="button" data-view="settings"><i data-lucide="sliders-horizontal"></i><span>设置</span></button>
       </nav>
-      <div class="sidebar-bottom"><span class="eyebrow">NAS WORKSPACE</span><span id="current-user"></span><div class="toolbar"><button class="icon-button theme-toggle" type="button" aria-label="切换明暗模式" title="切换明暗模式"><i data-lucide="sun-moon"></i></button><button id="logout" class="icon-button" type="button" aria-label="退出登录" title="退出登录"><i data-lucide="log-out"></i></button></div></div>
+      <div class="sidebar-bottom">
+        <div class="sidebar-user"><span id="user-avatar" class="sidebar-avatar" aria-hidden="true">A</span><div><strong id="current-user"></strong><small>NAS WORKSPACE</small></div></div>
+        <div class="sidebar-foot">
+          <button class="icon-button theme-toggle" type="button" aria-label="切换明暗模式" title="切换明暗模式"><i data-lucide="sun-moon"></i></button>
+          <button id="logout" class="icon-button" type="button" aria-label="退出登录" title="退出登录"><i data-lucide="log-out"></i></button>
+          <span class="eyebrow">AGPL-3.0</span>
+        </div>
+      </div>
     </aside>
     <main>
-      <div class="workspace-top"><span id="page-label" class="eyebrow">WORKSPACE / CLOUD</span><span class="server-state"><span class="signal"></span>服务器在线</span><button id="mobile-logout" class="icon-button" type="button" aria-label="退出登录" title="退出登录"><i data-lucide="log-out"></i></button></div>
+      <header class="workspace-top">
+        <span id="page-label" class="eyebrow">WORKSPACE / CLOUD</span>
+        <div class="crumb-meta"><span class="crumb-session">已连接 <b id="session-user">—</b></span><span class="meta-sep" aria-hidden="true"></span><span class="server-state"><span class="signal"></span>服务器在线</span></div>
+        <button id="mobile-logout" class="icon-button" type="button" aria-label="退出登录" title="退出登录"><i data-lucide="log-out"></i></button>
+      </header>
       <section id="cloud-view" hidden>
         <div class="page-heading"><div><span class="eyebrow">YOUR FILES</span><h1 id="cloud-title">我的网盘</h1></div><button id="cloud-add" class="secondary" type="button"><i data-lucide="plus"></i>添加账号</button></div>
         <div id="cloud-browser"></div>
       </section>
       <section id="resolve-view" hidden>
-        <div class="page-heading"><div><span class="eyebrow">SHARED WITH YOU</span><h1>分享解析</h1></div></div>
+        <div class="page-heading"><div><span class="eyebrow">SHARED WITH YOU</span><h1>分享解析</h1><p>粘贴网盘分享链接或视频页地址，解析后可直接浏览目录并加入下载。</p></div></div>
         <div class="resolve-top">
-          <form id="resolve-form" class="resolve-form">
-            <label for="link">链接</label><textarea id="link" rows="3" required placeholder="粘贴网盘分享链接、分享文案或视频链接（哔哩哔哩 / 快手 / 微博 / AcFun / 小红书 / Pixiv）"></textarea>
-            <div class="form-bottom"><div><label for="password">提取码</label><input id="password" maxlength="32" autocomplete="off" placeholder="可留空"></div><button class="primary" type="submit"><i data-lucide="scan-line"></i>解析</button></div>
+          <form id="resolve-form" class="resolve-card">
+            <h2><i data-lucide="link-2"></i>粘贴链接</h2>
+            <label for="link">分享链接 / 分享文案 / 视频地址</label><textarea id="link" rows="3" required placeholder="在此处粘贴网盘分享链接或视频链接"></textarea>
+            <div class="form-bottom"><div class="field"><label for="password">提取码</label><input id="password" maxlength="32" autocomplete="off" placeholder="可留空"></div><button class="primary" type="submit"><i data-lucide="scan-line"></i>解析</button></div>
           </form>
-          <div class="saved-links"><div class="library-panel"><div class="list-toolbar"><h2>保存的链接</h2><div class="segmented" id="library-tabs" role="group" aria-label="保存的链接"><button type="button" data-library="bookmarks" class="active">收藏</button><button type="button" data-library="history">最近解析</button></div></div><div id="library-list" class="library-scroll"></div></div></div>
+          <div class="saved-links"><div class="library-panel"><div class="list-toolbar"><h2><i data-lucide="bookmark"></i>保存的链接</h2><div class="segmented" id="library-tabs" role="group" aria-label="保存的链接"><button type="button" data-library="bookmarks" class="active">收藏</button><button type="button" data-library="history">最近解析</button></div></div><div id="library-list" class="library-scroll"></div></div></div>
         </div>
         <div id="video-result"></div>
         <div id="share-browser"></div>
-        <details class="direct-section"><summary>添加直链下载</summary><form id="direct-form">
-          <label for="direct-url">下载地址 · 支持 HTTP/HTTPS、磁力与 ed2k 链接</label><input id="direct-url" type="text" required placeholder="https:// 或 magnet:/ed2k: 链接">
-          <label for="direct-name">文件名</label><input id="direct-name" placeholder="可留空（磁力 / ed2k 由引擎自动命名）">
-          <label for="direct-threads">线程覆盖 · 0 跟随全局设置</label><input id="direct-threads" type="number" min="0" max="128" value="0">
-          <p class="metadata">磁力 / ed2k / BT 需要「设置 → 下载引擎」切换为 Gopeed 并安装内核。</p>
+        <section class="direct-section"><div class="direct-heading"><h2><i data-lucide="plus"></i>添加直链下载</h2><span class="summary-note">HTTP / 磁力 / ed2k</span></div><form id="direct-form">
+          <div class="direct-url-field"><label for="direct-url">下载地址</label><input id="direct-url" type="text" required placeholder="https://… 或 magnet:/ed2k: 链接"></div>
+          <div class="direct-name-field"><label for="direct-name">文件名</label><input id="direct-name" placeholder="可留空（磁力 / ed2k 由引擎自动命名）"></div>
+          <div class="direct-threads-field"><label for="direct-threads">线程覆盖 · 0 跟随全局设置</label><input id="direct-threads" type="number" min="0" max="128" value="0"></div>
           <button class="secondary" type="submit"><i data-lucide="plus"></i>加入下载</button>
-        </form></details>
+          <p class="metadata">磁力 / ed2k / BT 需要「设置 → 下载引擎」切换为 Gopeed 并安装内核。</p>
+        </form></section>
       </section>
       <section id="tasks-view" hidden>
-        <div class="page-heading"><div><span class="eyebrow">TRANSFER / LOCAL</span><h1>下载任务</h1></div><button id="refresh" class="icon-button" type="button" title="刷新" aria-label="刷新"><i data-lucide="refresh-cw"></i></button></div>
-        <div class="transfer-overview"><div><span class="eyebrow">总下载速度</span><strong id="total-speed">0 B/s</strong></div><div class="stat-pair"><span>进行中</span><b id="active-count">0</b><span>已完成</span><b id="done-count">0</b></div></div>
-        <div class="list-toolbar"><div class="segmented" id="task-filters" role="group" aria-label="任务筛选"><button type="button" data-filter="all" class="active">全部</button><button type="button" data-filter="active">进行中</button><button type="button" data-filter="done">已完成</button><button type="button" data-filter="error">失败</button></div><div class="toolbar"><button id="pause-all" class="icon-button" type="button" title="暂停全部" aria-label="暂停全部"><i data-lucide="pause"></i></button><button id="resume-all" class="icon-button" type="button" title="继续全部" aria-label="继续全部"><i data-lucide="play"></i></button></div></div>
+        <div class="page-heading"><div><span class="eyebrow">TRANSFER / LOCAL</span><h1>下载任务</h1></div><button id="refresh" class="secondary" type="button" title="刷新" aria-label="刷新"><i data-lucide="refresh-cw"></i>刷新</button></div>
+        <div class="transfer-overview">
+          <div class="speed-card"><span class="speed-card-icon"><i data-lucide="gauge"></i></span><div><span class="eyebrow">总下载速度</span><strong id="total-speed">0 B/s</strong></div></div>
+          <div class="stat-pair"><div><span>进行中</span><b id="active-count">0</b></div><div><span>已完成</span><b id="done-count">0</b></div></div>
+        </div>
+        <div class="list-toolbar"><div class="segmented" id="task-filters" role="group" aria-label="任务筛选"><button type="button" data-filter="all" class="active">全部</button><button type="button" data-filter="active">进行中</button><button type="button" data-filter="done">已完成</button><button type="button" data-filter="error">失败</button></div><div class="toolbar"><button id="pause-all" class="secondary" type="button" title="暂停全部进行中的任务" aria-label="暂停全部"><i data-lucide="pause"></i>全部暂停</button><button id="resume-all" class="secondary" type="button" title="继续全部已暂停或失败的任务" aria-label="继续全部"><i data-lucide="play"></i>全部继续</button></div></div>
         <div id="tasks"></div>
       </section>
       <section id="accounts-view" hidden>
         <div class="page-heading"><div><span class="eyebrow">CONNECTED ACCOUNTS</span><h1>网盘账号</h1></div><button id="account-add" class="primary" type="button"><i data-lucide="plus"></i>添加账号</button></div>
-        <div class="section-label"><h2>已配置账号</h2><span id="account-count" class="metadata"></span></div>
-        <div id="account-list" class="account-grid"></div>
-        <details class="available-section"><summary>尚未配置的平台 <span id="available-count" class="metadata"></span></summary><div id="available-list" class="available-list"></div></details>
+        <div class="section-label"><h2>已配置账号</h2><span id="account-count" class="metadata"></span></div>        <div id="account-list" class="account-grid"></div>
+        <section class="available-section"><div class="available-heading"><i data-lucide="circle-plus"></i><h2>尚未配置的平台</h2><span id="available-count" class="metadata"></span></div><div id="available-list" class="available-list"></div></section>
       </section>
       <section id="settings-view" hidden>
         <div class="page-heading"><div><span class="eyebrow">WORKSPACE SETTINGS</span><h1>设置</h1></div></div>
@@ -86,6 +109,14 @@
           <label for="setting-trackers">BT Tracker 列表 · 每行一个，留空用内置默认列表</label><textarea id="setting-trackers" rows="4" placeholder="tracker://host/announce（每行一个）"></textarea>
           <p id="settings-status" class="inline-status" role="status"></p><button class="secondary" type="submit"><i data-lucide="save"></i>保存设置</button>
         </form></div>
+        <div class="settings-section"><div><h2>服务器存储</h2><span class="metadata">STORAGE</span></div>
+          <div class="storage-panel">
+            <div class="storage-row"><span class="metadata">数据目录</span><span id="storage-data" class="mono">—</span></div>
+            <div class="storage-row"><span class="metadata">缓存目录</span><span id="storage-cache" class="mono">—</span></div>
+            <div class="storage-row"><span class="metadata">下载目录</span><span id="storage-download" class="mono">—</span></div>
+            <p class="backup-hint">网页版不能直接修改目录：Docker 部署请调整 <b class="mono">/data</b> 与 <b class="mono">/downloads</b> 的挂载卷；本地运行请修改 <b class="mono">YUNX_DESKTOP_DATA_DIR</b> 与 <b class="mono">YUNX_DOWNLOAD_DIR</b> 后重启。空间不足时请清理磁盘或扩容挂载卷。</p>
+          </div>
+        </div>
         <div class="settings-section"><div><h2>账号备份</h2><span class="metadata">CREDENTIAL BACKUP</span></div>
           <div class="backup-row"><p class="backup-hint">把全部平台凭证导出为口令加密的 .yunx 备份，或从备份文件恢复 —— 与桌面版通用，跨设备迁移不用逐个重填。</p><button id="backup-open" class="secondary" type="button"><i data-lucide="archive"></i>备份与恢复</button></div>
         </div>
@@ -95,7 +126,6 @@
           <label for="confirm-password">确认新密码</label><input id="confirm-password" type="password" autocomplete="new-password" required minlength="12" maxlength="256">
           <p id="password-status" class="inline-status" role="status"></p><button class="secondary" type="submit"><i data-lucide="key-round"></i>修改密码</button>
         </form></div>
-        <div class="settings-section"><div><h2>外观</h2><span class="metadata">APPEARANCE</span></div><div class="segmented" id="theme-options" role="group" aria-label="外观"><button type="button" data-theme="system">跟随系统</button><button type="button" data-theme="light">浅色</button><button type="button" data-theme="dark">深色</button></div></div>
       </section>
       <footer><span>YUNX · AGPL-3.0</span><span>YOUR FILES / YOUR SPACE</span></footer>
     </main>
@@ -105,9 +135,9 @@
     <form id="account-form">
       <label for="account-platform">网盘</label><select id="account-platform"></select>
       <div id="credential-fields"></div>
-      <details class="credential-help"><summary>凭证从哪里获取？</summary><p>在电脑浏览器登录对应网盘。Cookie 可从开发者工具的网络请求头中复制；Token 按平台的登录响应填写。</p><p>凭证仅保存在这台服务器，不会在页面回显。</p></details>
+      <details class="credential-help"><summary>凭证从哪里获取？<i data-lucide="chevron-down" class="summary-chevron"></i></summary><p>在电脑浏览器登录对应网盘。Cookie 可从开发者工具的网络请求头中复制；Token 按平台的登录响应填写。</p><p>凭证仅保存在这台服务器，不会在页面回显。</p></details>
       <p id="account-status" class="inline-status" role="status"></p>
-      <div class="account-actions"><button class="primary" type="submit"><i data-lucide="save"></i>保存账号</button></div>
+      <div class="account-actions"><button class="secondary" type="button" id="account-cancel">取消</button><button class="primary" type="submit"><i data-lucide="save"></i>保存账号</button></div>
     </form>
   </dialog>
   <dialog id="confirm-dialog"><div class="dialog-heading"><h2>移除账号</h2></div><p id="confirm-text"></p><div class="toolbar"><button id="confirm-cancel" class="secondary" type="button">取消</button><button id="confirm-remove" class="destructive" type="button">移除</button></div></dialog>

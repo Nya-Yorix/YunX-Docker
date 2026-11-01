@@ -23,6 +23,28 @@ function el(tag, cls, text) {
   return node;
 }
 function icon(name) { const node = el("i"); node.dataset.lucide = name; return node; }
+// 空态：图标 + 文案（图标在 icons() 时由 lucide 渲染，随节点一起进场，不再依赖 CSS 占位方块）
+function emptyState(text, iconName = "inbox", error = false) {
+  const node = el("div", "empty" + (error ? " error" : ""));
+  node.append(icon(error ? "circle-alert" : iconName), el("span", "", text));
+  return node;
+}
+// ---- 视觉小件:平台图标 / 状态徽标 / 骨架屏 ----
+// 平台图标沿用 lucide 线性字重,网盘统一「云」,按平台微调轮廓;视频平台用专属符号。
+const platformIcons = { QUARK:"cloud", UC:"cloud", XUNLEI:"zap", BAIDU:"cloud", C139:"cloud", PAN123:"cloud",
+  PAN115:"cloud", GUANGYA:"wind", ILANZOU:"cloud-upload", LANZOU:"cloud-upload", GITHUB:"git-branch",
+  VIDEO_BILIBILI:"clapperboard", VIDEO_KUAISHOU:"clapperboard", VIDEO_WEIBO:"clapperboard", VIDEO_ACFUN:"clapperboard", VIDEO_XHS:"clapperboard", VIDEO_PIXIV:"clapperboard" };
+function platformIcon(platform) { const wrap = el("span","platform-icon"); wrap.append(icon(platformIcons[platform] || "cloud")); return wrap; }
+function badge(text, tone = "") { return el("span", "badge" + (tone ? " " + tone : ""), text); }
+function skeletonRows(count = 3, grid = false) {
+  const wrap = el("div", grid ? "file-grid" : "file-list");
+  for (let i = 0; i < count; i++) {
+    const row = el("div", "file-row skeleton");
+    row.append(el("span","sk sk-check"), el("span","sk sk-icon"), el("span","sk sk-name"), el("span","sk sk-size"), el("span","sk sk-time"), el("span","sk sk-act"));
+    wrap.append(row);
+  }
+  return wrap;
+}
 function command(label, name, action, cls = "icon-button") {
   const node = el("button", cls); node.type = "button"; node.title = label; node.setAttribute("aria-label", label);
   if (name) node.append(icon(name));
@@ -101,11 +123,6 @@ function theme(value) {
   try { localStorage.setItem("yunx-theme", value); } catch {}
   const actual = value === "system" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : value;
   document.documentElement.dataset.theme = actual;
-  document.querySelectorAll("[data-theme]").forEach(button => {
-    if (button.tagName !== "BUTTON") return;
-    button.classList.toggle("active", button.dataset.theme === value);
-    button.setAttribute("aria-pressed", String(button.dataset.theme === value));
-  });
 }
 let preferredTheme = "system";
 try { preferredTheme = localStorage.getItem("yunx-theme") || "system"; } catch {}
@@ -114,7 +131,6 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if
 document.querySelectorAll(".theme-toggle").forEach(button => button.addEventListener("click", () => {
   preferredTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark"; theme(preferredTheme);
 }));
-$("theme-options").querySelectorAll("button").forEach(button => button.addEventListener("click", () => { preferredTheme = button.dataset.theme; theme(preferredTheme); }));
 function showLogin(message = "") {
   loggedIn = false;
   $("app").hidden = true; $("login-view").hidden = false;
@@ -126,14 +142,14 @@ function showLogin(message = "") {
 async function showApp(session) {
   loggedIn = true; $("login-view").hidden = true; $("app").hidden = false;
   $("current-user").textContent = session.username;
+  $("session-user").textContent = session.username;
+  $("user-avatar").textContent = (session.username || "?").trim().charAt(0);
   // 部署托管密码(YUNX_PASSWORD):隐藏改密表单,改为静态说明;否则照常显示
   const managed = !!session.passwordManaged;
   $("password-form").hidden = managed;
   $("password-managed").hidden = !managed;
   await loadAccounts();
   await view(activeView);
-  // 提示放在切页之后:view() 会清空 toast,先切后示才能存活
-  if (managed) notice("密码由部署配置 YUNX_PASSWORD 管理。", false);
 }
 async function view(name) {
   activeView = name;
@@ -142,7 +158,7 @@ async function view(name) {
     button.classList.toggle("active", button.dataset.view === name);
     if (button.dataset.view === name) button.setAttribute("aria-current","page"); else button.removeAttribute("aria-current");
   });
-  $("page-label").textContent = "WORKSPACE / " + name.toUpperCase();
+  $("page-label").textContent = "WORKSPACE / " + ({cloud:"CLOUD",resolve:"RESOLVE",tasks:"TASKS",accounts:"ACCOUNTS",settings:"SETTINGS"}[name] || name.toUpperCase());
   clearToasts();
   if (name === "tasks") { seenTaskIds.clear(); await refreshTasks(); }
   if (name === "resolve") await loadLibrary();
@@ -158,6 +174,10 @@ async function view(name) {
     $("setting-concurrency").value = data.concurrency;
     $("setting-speed").value = +(data.speedLimit/1048576).toFixed(2);
     $("setting-trackers").value = data.btTrackers || "";
+    const storage = data.storage || {};
+    $("storage-data").textContent = storage.dataDir || "—";
+    $("storage-cache").textContent = storage.cacheDir ? `${storage.cacheDir} · 可用 ${size(storage.cacheFreeBytes)}` : "—";
+    $("storage-download").textContent = storage.downloadDir ? `${storage.downloadDir} · 可用 ${size(storage.downloadFreeBytes)}` : "—";
     engineSelection = data.downloadEngine === "gopeed" ? "gopeed" : "builtin";
     renderEngineOptions();
     renderEngineState(engine);
@@ -220,7 +240,7 @@ function openAccount(platform = "") {
 for (const id of ["account-add","cloud-add"]) $(id).addEventListener("click", () => openAccount());
 $("account-platform").addEventListener("change", accountFields);
 $("close-account").addEventListener("click", () => $("account-dialog").close());
-$("account-form").addEventListener("submit", event => {
+$("account-cancel").addEventListener("click", () => $("account-dialog").close());$("account-form").addEventListener("submit", event => {
   event.preventDefault();
   busy(event.submitter, async () => {
     const platform = $("account-platform").value;
@@ -237,28 +257,62 @@ async function loadAccounts() {
   renderAccounts();
 }
 const noQuotaPlatform = p => p === "GITHUB" || p === "LANZOU" || p.startsWith("VIDEO_");   // 蓝奏云无容量上限,与 GitHub/视频一样不显示容量区
+// 账号卡状态（决定悬停时上方那条亮光的颜色）：
+//   auth   登录问题（凭证失效 / 校验失败）→ 红
+//   tight  存储告急（已用 ≥ 80%）        → 黄
+//   normal 其余                           → 蓝
+const QUOTA_TIGHT = .8, QUOTA_FULL = .95;
+const quotaRatio = account => {
+  const q = account.profile?.quota;
+  return q && q.total > 0 ? Math.min(1, Math.max(0, q.used / q.total)) : -1;
+};
+function accountState(account) {
+  if (account.profile?.error) return "auth";
+  return quotaRatio(account) >= QUOTA_TIGHT ? "tight" : "normal";
+}
+// 登录态圆点:失败红、临时失败黄、正常绿(卡片标题副行用)
+function stateDot(account) {
+  const dot = el("span","account-state-dot");
+  if (account.profile?.error) dot.classList.add(account.profile.auth ? "bad" : "warn");
+  return dot;
+}
 function headMetaNode(account) {
   // 无容量区卡片(GITHUB/LANZOU/视频)的登录态只在标题副行提示,错误详情放 title 悬停可见
   const failed = noQuotaPlatform(account.platform) && !!account.profile?.error;
-  const node = el("span","metadata"+(failed ? " capacity-error" : ""),
-    failed ? (account.profile.auth ? "登录失败" : "校验失败") : account.profile?.nickname || "已配置凭证");
+  const node = el("span","metadata" + (failed ? " capacity-error" : ""));
+  node.append(stateDot(account), el("span","",failed ? (account.profile.auth ? "登录失败" : "校验失败") : account.profile?.nickname || "已配置凭证"));
   if (failed) node.title = account.profile.error;
   return node;
 }
+const capacityLabel = bytes => {
+  const units = ["B","KiB","MiB","GiB","TiB"], power = Math.min(4, Math.floor(Math.log(Math.max(1, bytes))/Math.log(1024)));
+  const value = bytes / 1024 ** power;
+  return { value:value.toFixed(power > 1 && value < 100 ? 2 : power > 1 ? 1 : 0), unit:units[power] };
+};
 function capacityNodes(account) {
   const p = account.platform;
-  if (noQuotaPlatform(p)) return [];
+  if (noQuotaPlatform(p)) return [el("div","capacity-na","该平台不提供容量信息")];
   const q = account.profile?.quota;
   if (q && q.total > 0) {
-    const value = el("strong","capacity-value",size(q.used)); value.append(el("small","","已用"));
-    const meter = el("div","quota-bar"), ratio = Math.min(1,Math.max(0,q.used/q.total));
+    const ratio = quotaRatio(account);
+    const label = capacityLabel(q.used);
+    const value = el("strong","capacity-value" + (label.value.length > 5 ? " gb" : ""),label.value);
+    value.append(el("small","",label.unit + " 已用"));
+    const meter = el("div","quota-bar");
     meter.setAttribute("role","meter"); meter.setAttribute("aria-label",names[p]+" 存储使用率");
     meter.setAttribute("aria-valuenow",String(Math.round(ratio*100))); meter.setAttribute("aria-valuemin","0"); meter.setAttribute("aria-valuemax","100");
-    for (let i=0;i<24;i++) meter.append(el("i", i<Math.ceil(ratio*24) ? "filled"+(ratio>.9 ? " warning":"") : ""));
+    meter.title = "已用 " + size(q.used) + " / 总容量 " + size(q.total);
+    // 进度条与卡片悬停亮光同一套阈值：≥80% 黄（告急），≥95% 红（几乎写满）
+    const fill = el("i", ratio >= QUOTA_FULL ? "danger" : ratio >= QUOTA_TIGHT ? "warning" : "");
+    fill.style.width = (ratio*100).toFixed(1) + "%"; meter.append(fill);
     const meta = el("div","capacity-meta"); meta.append(el("span","","总容量 "+size(q.total)),el("span","",Math.round(ratio*100)+"%"));
     return [value,meter,meta];
   }
-  if (profilePending.has(p)) return [el("div","capacity-na","读取容量中…")];
+  if (profilePending.has(p)) {
+    const pending = el("div","capacity-pending");
+    pending.append(el("span","sk sk-line"), el("span","sk sk-line short"));
+    return [pending];
+  }
   if (account.profile?.error) {
     // 登录失败/容量暂不可用 + 下方文字显示服务端返回的真实错误信息(限两行,悬停看全文)
     const kind = account.profile.auth ? " capacity-error" : "";
@@ -275,24 +329,27 @@ function updateCard(platform) {
   const account = accountStates.find(a => a.platform === platform);
   const card = account && $("account-list").querySelector('.account-card[data-platform="'+platform+'"]');
   if (!card) return;
+  card.classList.toggle("account-error", !!account.profile?.auth);
+  card.dataset.state = accountState(account);
   card.querySelector(".account-head .metadata").replaceWith(headMetaNode(account));
   card.querySelector(".capacity-zone").replaceChildren(...capacityNodes(account));
 }
 function renderAccounts() {
   const configured = accountStates.filter(a => a.configured), available = accountStates.filter(a => !a.configured);
   const animate = accountsAnimateNext; accountsAnimateNext = false;
-  $("account-count").textContent = configured.length + " ACCOUNTS";
+  $("account-count").textContent = configured.length ? "共 " + configured.length + " 个" : "";
   $("available-count").textContent = available.length;
   $("account-list").replaceChildren();
-  if (!configured.length) $("account-list").append(el("div","empty","尚未添加账号"));
+  if (!configured.length) $("account-list").append(emptyState("尚未添加账号，先在上方「添加账号」里填入一个网盘凭证。", "users-round"));
   let cardIndex = 0;
   for (const account of configured) {
-    const p = account.platform, card = el("article","account-card"+(noQuotaPlatform(p) ? " compact" : ""));
-    card.dataset.platform = p; card.dataset.compact = noQuotaPlatform(p) ? "1" : "0";
+    const p = account.platform, card = el("article","account-card"+(noQuotaPlatform(p) ? " compact" : "")+(account.profile?.auth ? " account-error" : ""));
+    card.dataset.platform = p;
+    card.dataset.state = accountState(account);
     if (animate) stagger(card, cardIndex++, 16);
     const head = el("div","account-head"), info = el("div");
     info.append(el("h2","",names[p]),headMetaNode(account));
-    head.append(icon("cloud"),info); card.append(head);
+    head.append(platformIcon(p),info); card.append(head);
     const zone = el("div","capacity-zone"); zone.append(...capacityNodes(account)); card.append(zone);
     const actions = el("div","toolbar");
     if (account.cloudSupported) actions.append(command("浏览文件","folder-open",async () => { await view("cloud"); await loadCloud(p); },"secondary"));
@@ -305,38 +362,12 @@ function renderAccounts() {
     actions.append(actionsGroup);
     card.append(actions); $("account-list").append(card);
   }
-  $("available-list").replaceChildren(...available.map(account => command(names[account.platform],"plus",() => openAccount(account.platform),"available-account")));
-  placeAccountCards();
+  $("available-list").replaceChildren(...available.map(account => {
+    const button = command(names[account.platform], platformIcons[account.platform] || "cloud", () => openAccount(account.platform), "available-account");
+    button.append(icon("plus")); button.lastChild.classList.add("plus"); return button;
+  }));
   icons();
 }
-/* 显式网格摆放:完整卡轮转分布到各列(数量差≤1,行边界保持成对对齐);
-   半高卡从左到右逐列堆叠填空(填满一列再换下一列)——三张半高卡 = 左边两个上下叠 + 右边一张在顶,
-   空洞只留在最右端。行高下限 158px 全网格共享,保证跨列行边界对齐 */
-function placeAccountCards() {
-  const list = $("account-list");
-  const cards = [...list.querySelectorAll(".account-card")];
-  if (!cards.length) return;
-  const W = list.clientWidth;
-  if (!W) return;   // 视图隐藏时跳过,进入账号页时会重新渲染
-  const minCol = Math.max(330, (W - 48) / 4);
-  const cols = Math.max(1, Math.floor((W + 16) / (minCol + 16)));
-  const fulls = cards.filter(c => c.dataset.compact !== "1");
-  const comps = cards.filter(c => c.dataset.compact === "1");
-  const rows = Math.max(2, 2 * Math.ceil(fulls.length / cols), Math.ceil((2 * fulls.length + comps.length) / cols));
-  const cursors = Array(cols).fill(1);
-  const place = (el, col, span) => {
-    el.style.gridColumn = String(col + 1);
-    el.style.gridRow = `${cursors[col]} / ${cursors[col] + span}`;
-    cursors[col] += span;
-  };
-  fulls.forEach((el, i) => place(el, i % cols, 2));
-  let ci = 0;   // 半高卡逐列堆叠;总容量 cols×rows ≥ 2×完整卡+半高卡数,由 rows 取上界保证全部放得下
-  for (let col = 0; col < cols && ci < comps.length; col++) {
-    while (cursors[col] <= rows && ci < comps.length) place(comps[ci++], col, 1);
-  }
-}
-let accountResizeTimer = 0;
-addEventListener("resize", () => { clearTimeout(accountResizeTimer); accountResizeTimer = setTimeout(() => { if (loggedIn && activeView === "accounts") placeAccountCards(); }, 120); });
 async function refreshProfile(platform) {
   if (profilePending.has(platform)) return;
   profilePending.add(platform);
@@ -377,14 +408,14 @@ async function loadCloud(platform) {
   cloudPlatform = platform;
   const generation = ++cloudGeneration;
   $("cloud-title").textContent = names[platform] || platform;
-  delete browsers.cloud; $("cloud-browser").replaceChildren(el("div","empty","[读取目录中…]"));
+  delete browsers.cloud; $("cloud-browser").replaceChildren(skeletonRows(4));
   try {
     const result = await api("cloud/files",{platform});
     if (generation !== cloudGeneration || !loggedIn) return;
     makeBrowser("cloud",result);
   } catch (error) {
     // 错误只显示在浏览区中间(.empty 红字),不再向上抛——避免 busy() 再打一份页顶全局通知
-    if (generation === cloudGeneration) $("cloud-browser").replaceChildren(el("div","empty error",error.message));
+    if (generation === cloudGeneration) { $("cloud-browser").replaceChildren(emptyState(error.message, "cloud-off", true)); icons(); }
   }
 }
 async function resolve(link,password = "") {
@@ -405,7 +436,7 @@ async function resolve(link,password = "") {
 }
 async function loadLibrary() { libraryData = await api("library"); renderLibrary(); }
 // 「保存的链接」平台图标:GitHub/视频走专属图标,其余网盘用云图标
-const libIcon = platform => platform === "GITHUB" ? "github" : platform?.startsWith("VIDEO_") ? "clapperboard" : "cloud";
+const libIcon = platform => platform === "GITHUB" ? "git-branch" : platform?.startsWith("VIDEO_") ? "clapperboard" : (platformIcons[platform] || "cloud");
 function renderLibrary() {
   $("library-list").replaceChildren();
   let cardIndex = 0;
@@ -414,7 +445,9 @@ function renderLibrary() {
     stagger(card, cardIndex++, 12);
     card.tabIndex = 0; card.setAttribute("role","button");
     card.setAttribute("aria-label","重新解析 "+(item.title || item.link));
-    card.append(icon(libIcon(item.platform)), el("span","library-card-title", item.title || item.link));
+    card.title = item.link;
+    const mark = el("span","lib-icon"); mark.append(icon(libIcon(item.platform)));
+    card.append(mark, el("span","library-card-title", item.title || item.link));
     const open = async () => { $("link").value = item.link; $("password").value = item.password; await resolve(item.link,item.password); };
     card.addEventListener("click", open);
     card.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } });
@@ -423,7 +456,7 @@ function renderLibrary() {
     card.append(remove);
     $("library-list").append(card);
   }
-  if (!libraryData[libraryTab].length) $("library-list").append(el("div","empty",libraryTab === "bookmarks" ? "暂无收藏链接" : "暂无解析记录"));
+  if (!libraryData[libraryTab].length) $("library-list").append(emptyState(libraryTab === "bookmarks" ? "暂无收藏链接，解析后可点「收藏链接」保存" : "暂无解析记录", "bookmark"));
   icons();
 }
 // 悬停卡片条时滚轮横向滚动(监听挂在容器上,内部重渲染不影响);无横向溢出时不拦截页面滚动
@@ -450,7 +483,8 @@ function renderVideo(result) {
   const root = $("video-result"); root.replaceChildren();
   const card = el("article","video-card");
   const head = el("div","browser-title");
-  head.append(icon("clapperboard"),el("h2","",result.title || "视频结果"),el("span","metadata",names[result.platform] || ""));
+  head.append(el("span","platform-icon"),el("h2","",result.title || "视频结果"),el("span","metadata",names[result.platform] || ""));
+  head.firstChild.append(icon("clapperboard"));
   card.append(head);
   if (result.author) card.append(el("p","metadata",result.author));
   if (result.notice) card.append(el("p","metadata",result.notice));
@@ -501,13 +535,13 @@ async function downloadFile(state,file) {
 }
 function buildBrowser(state) {
   const root = $(state.kind+"-browser"); root.replaceChildren(); root.className = "file-browser";
-  const title = el("div","browser-title"); title.append(icon("folder-open"),el("h2","",state.result.title),el("span","metadata",names[state.result.platform] || "GitHub")); root.append(title);
-  title.hidden = state.kind === "cloud";
+  const title = el("div","browser-title"); title.append(icon("folder-open"),el("h2","",state.result.title),el("span","metadata",names[state.result.platform] || "GitHub")); root.append(title);  title.hidden = state.kind === "cloud";
   if (state.kind === "share" && state.link) title.append(command("收藏链接","bookmark",async () => {
     libraryData = await api("library",{kind:"bookmarks",link:state.link,password:state.password,title:state.result.title});
     renderLibrary(); notice("链接已收藏");
   }));
   const crumbs = el("div","breadcrumbs");
+  crumbs.setAttribute("aria-label","目录路径");
   state.stack.forEach((dir,index) => {
     crumbs.append(command(dir.name,null,() => navigate(state,index), "breadcrumb"));
     if (index < state.stack.length-1) crumbs.append(icon("chevron-right"));
@@ -533,7 +567,7 @@ function buildBrowser(state) {
   const threads = el("input","threads-input"); threads.type = "number"; threads.min = "0"; threads.max = "128"; threads.value = "0";
   threads.placeholder = "0"; threads.title = "下载线程覆盖，0 为跟随全局设置"; threads.setAttribute("aria-label","下载线程覆盖，0 为跟随全局设置");
   threads.addEventListener("input",() => { state.threads = Number(threads.value)||0; });
-  const threadsField = el("label","threads-field"); threadsField.append(el("span","","线程覆盖"),threads);
+  const threadsField = el("label","threads-field"); threadsField.append(el("span","","线程"),threads);
   selection.append(threadsField);
   const queue = command("下载所选文件","download",async () => {
     let success = 0; const errors = [];
@@ -543,7 +577,7 @@ function buildBrowser(state) {
     }
     notice("已加入 "+success+" 个下载"+(errors.length ? "；"+errors.join("；") : ""),errors.length > 0);
     renderFiles(state);
-  },"secondary");
+  },"primary");
   checkbox.addEventListener("change",() => {
     for (const file of visibleFiles(state).filter(f => (state.kind === "cloud" || !f.directory) && !state.result.repositories)) {
       const key = file.fid || file.url; if (checkbox.checked) state.selected.add(key); else state.selected.delete(key);
@@ -592,12 +626,23 @@ function renderFiles(state, animate) {
   state.checkAll.checked = !!selectable.length && selectable.every(f => state.selected.has(f.fid || f.url));
   state.checkAll.indeterminate = selectable.some(f => state.selected.has(f.fid || f.url)) && !state.checkAll.checked;
   state.checkAll.disabled = !selectable.length;
-  if (!files.length) state.rows.append(el("div","empty",state.query ? "没有匹配的文件" : "此目录没有文件"));
+  if (!files.length) state.rows.append(emptyState(state.query ? "没有匹配的文件" : state.kind === "cloud" ? "这个目录是空的" : "没有可显示的文件", state.query ? "search-x" : "folder-open"));
   else if (state.layout === "list") {
     const header = el("div","file-header");
+    header.setAttribute("aria-hidden","true");
     header.append(el("span"),el("span"),el("span","","名称"),el("span","file-size","大小"),el("span","file-time","修改时间"),el("span"));
     state.rows.append(header);
   }
+  // 类型图标:文件夹 / 仓库 / 按扩展名区分的文件类型
+  const fileIcon = name => {
+    const ext = (name.split(".").pop() || "").toLowerCase();
+    if (["mp4","mkv","avi","mov","wmv","flv","webm","ts","m4v","rmvb"].includes(ext)) return "file-video";
+    if (["mp3","flac","wav","aac","m4a","ape","ogg"].includes(ext)) return "file-audio";
+    if (["jpg","jpeg","png","gif","webp","bmp","svg","heic","avif"].includes(ext)) return "file-image";
+    if (["zip","rar","7z","tar","gz","bz2","xz","iso"].includes(ext)) return "file-archive";
+    if (["pdf","doc","docx","txt","md","xls","xlsx","ppt","pptx","epub"].includes(ext)) return "file-text";
+    return "file";
+  };
   let rowIndex = 0;
   for (const file of files) {
     const row = el("div","file-row"), check = el("input"); check.type = "checkbox";
@@ -614,10 +659,10 @@ function renderFiles(state, animate) {
       else if (file.directory) await navigate(state,-1,file);
       else { await downloadFile(state,file); notice("已加入下载"); }
     };
-    row.append(check,icon(file.directory ? "folder" : state.result.repositories ? "github" : "file"));
+    row.append(check,icon(file.directory ? "folder" : state.result.repositories ? "git-branch" : fileIcon(file.name)));
     row.append(command(file.name,null,open,"file-name"));
     row.append(el("span","file-size",file.directory ? "—" : size(file.size || 0)),el("span","file-time",modified(file.modified)));
-    row.append(command(file.directory || state.result.repositories ? "打开" : "下载",file.directory || state.result.repositories ? "chevron-right" : "download",open));
+    row.append(command(file.directory || state.result.repositories ? "打开" : "下载到服务器",file.directory || state.result.repositories ? "chevron-right" : "download",open));
     state.rows.append(row);
   }
   icons();
@@ -662,25 +707,39 @@ $("cloud-action-form").addEventListener("submit",event=>{
 });
 async function refreshTasks() {
   const tasks = await api("tasks"); taskStates = tasks;
-  $("task-count").textContent = tasks.filter(t => t.status <= 1).length;
+  const active = tasks.filter(t => t.status <= 1).length;
+  $("task-count").textContent = active ? String(active) : "";
+  $("task-count").title = active ? active + " 个进行中的下载" : "";
   $("total-speed").textContent = size(tasks.reduce((sum,t) => sum+(t.status===1 ? t.speed : 0),0))+"/s";
-  $("active-count").textContent = tasks.filter(t => t.status <= 1).length; $("done-count").textContent = tasks.filter(t => t.status === 3).length;
+  $("active-count").textContent = active; $("done-count").textContent = tasks.filter(t => t.status === 3).length;
   if (activeView !== "tasks" || $("tasks").querySelector("button:disabled")) return;
   const focused = $("tasks").contains(document.activeElement) ? {id:document.activeElement.closest(".task-row")?.dataset.id,title:document.activeElement.getAttribute("aria-label")} : null;
   const shown = tasks.filter(t => taskFilter === "all" || (taskFilter === "active" ? t.status <= 2 : taskFilter === "done" ? t.status === 3 : t.status === 4));
   $("tasks").replaceChildren();
-  if (!shown.length) $("tasks").append(el("div","empty","暂无下载任务"));
+  if (!shown.length) $("tasks").append(emptyState(tasks.length ? "当前筛选下没有任务" : "还没有下载任务，去「分享解析」或「我的网盘」挑几个文件吧。", "arrow-down-to-line"));
   for (const task of shown) {
-    const row = el("div","task-row"); row.dataset.id = String(task.id); row.append(icon(task.status === 3 ? "circle-check" : "file"));
+    const done = task.status === 3, failed = task.status === 4, paused = task.status === 2, running = task.status === 1;
+    const row = el("div","task-row" + (done ? " status-done" : failed ? " status-failed" : paused ? " status-paused" : " status-active"));
+    row.dataset.id = String(task.id);
+    const mark = el("span","task-icon"); mark.append(icon(done ? "circle-check" : failed ? "circle-alert" : paused ? "pause" : "arrow-down-to-line"));
+    row.append(mark);
     const detail = el("div","task-detail"), top = el("div","task-top");
     // 文件已从服务器删除(垃圾桶按钮):名字标红划掉,隐藏「下载到本机」与「删除文件」
-    top.append(el("div","file-name"+(task.fileDeleted ? " file-deleted" : ""),task.filename),
-      el("span","task-status"+(task.status === 3 ? " complete" : task.status === 4 ? " failed" : ""),
-        task.mergePercent >= 0 ? "合并中 "+task.mergePercent+"%" : task.fileDeleted && task.status === 3 ? "文件已删除" : statuses[task.status]));
-    const progress = el("progress"); progress.max = Math.max(task.total,task.downloaded,1); progress.value = task.status === 3 ? progress.max : task.downloaded; progress.setAttribute("aria-label",task.filename+" 下载进度");
-    detail.append(top,progress,el("div","metadata",size(task.downloaded)+" / "+(task.total ? size(task.total) : "未知大小")+(task.speed ? " · "+size(task.speed)+"/s" : "")
-      +(task.seeds >= 0 ? " · 种子 "+task.seeds : "")+(task.peers >= 0 ? " · 连接 "+task.peers : "")));
-    if (task.status === 3) detail.append(el("div","metadata",task.savePath));
+    const name = el("div","file-name"+(task.fileDeleted ? " file-deleted" : ""),task.filename); name.title = task.filename;
+    const status = el("span","task-status " + (task.mergePercent >= 0 || running ? "running" : done ? "complete" : failed ? "failed" : ""));
+    status.textContent = task.mergePercent >= 0 ? "合并中 " + task.mergePercent + "%" : task.fileDeleted && done ? "文件已删除" : statuses[task.status];
+    top.append(name, status);
+    const progress = el("progress"); progress.max = Math.max(task.total,task.downloaded,1); progress.value = done ? progress.max : task.downloaded; progress.setAttribute("aria-label",task.filename+" 下载进度");
+    detail.append(top,progress);
+    const meta = el("div","task-meta");
+    const spent = el("span","number",size(task.downloaded)+" / "+(task.total ? size(task.total) : "未知大小"));
+    meta.append(spent);
+    if (task.total > 0) meta.append(el("span","number",Math.min(100,Math.round(task.downloaded/task.total*100))+"%"));
+    if (task.speed) meta.append(el("span","number",size(task.speed)+"/s"));
+    if (task.seeds >= 0) meta.append(el("span","","种子 "+task.seeds));
+    if (task.peers >= 0) meta.append(el("span","","连接 "+task.peers));
+    detail.append(meta);
+    if (task.status === 3) { const path = el("div","metadata save-path",task.savePath); path.title = task.savePath; detail.append(path); }
     if (task.status === 4 && task.error) detail.append(el("div","error",task.error));
     const actions = el("div","task-actions");
     const action = async type => { await api("tasks",{id:task.id,action:type}); notice(type === "remove" ? "任务记录已移除" : type === "delete-file" ? "文件已从服务器删除" : "操作已提交"); };

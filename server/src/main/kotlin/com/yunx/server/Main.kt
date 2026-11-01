@@ -5,6 +5,7 @@ import com.sun.net.httpserver.HttpServer
 import com.yunx.app.AppContext
 import com.yunx.app.data.db.AppDatabase
 import com.yunx.app.data.download.ChunkDownloader
+import com.yunx.app.data.download.DownloadCacheMaintenance
 import com.yunx.app.data.download.DownloadManager
 import com.yunx.app.data.network.CredentialExpiredException
 import com.yunx.app.data.network.HttpClients
@@ -258,6 +259,11 @@ fun main() {
     val downloadDir = File(System.getenv("YUNX_DOWNLOAD_DIR") ?: "/downloads").canonicalFile
     check(downloadDir.isDirectory || downloadDir.mkdirs()) { "Cannot create download directory" }
     check(downloadDir.canWrite()) { "Download directory is not writable by the container user; check the NAS directory owner or ACL" }
+    // 网页版没有桌面版的「设置 → 储存目录」：磁盘不足时提示面向部署的处理方式，
+    // 而不是让用户去一个不存在的设置项（设置页的「服务器存储」只展示路径与可用空间）。
+    DownloadCacheMaintenance.storageHint = {
+        "请清理服务器磁盘，或为数据卷 / 下载目录扩容后重试。"
+    }
     val db = AppDatabase.get()
     val store = Credentials(File(AppContext.dataDir, "server-credentials.enc"))
     runBlocking { db.downloadTaskDao().markInterruptedAsPaused() }

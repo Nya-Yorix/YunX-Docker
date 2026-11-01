@@ -235,8 +235,10 @@ internal class GuangYaDrive(
     private val device: () -> GuangYaDevice
 ) : CloudDriveOps {
     override val rootDir = "0"
-    override suspend fun credentialCheck(): CredentialCheckResult =
-        CredentialCheckResult(api.quotaCheck(accessToken(), device()))
+    override suspend fun credentialCheck(): CredentialCheckResult {
+        val nickname = runCatching { api.fetchAccountInfo(accessToken(), device())?.nickname?.takeIf { it.isNotBlank() } }.getOrNull()
+        return CredentialCheckResult(api.quotaCheck(accessToken(), device()), nickname)
+    }
     override suspend fun listCloudDir(dir: String, page: Int, cursor: String?): CloudDirPage =
         CloudDirPage(api.listCloudFiles(accessToken(), dir))   // 全量返回，无分页
     override suspend fun personalDownloadLink(file: ShareFile): DownloadLink? =
