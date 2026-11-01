@@ -79,12 +79,29 @@ class CloudDrives(private val credentials: Credentials) {
         return UCApi().apply { cookieSink = { merged, _ -> credentials.updateCookie("UC", expected, merged); expected = merged } }
     }
 
-    /** 迅雷装配：401 自动刷新一次（refresh 结果不落库——落库语义在 repo() 的续期闭包里） */
+    /** 迅雷装配：401 自动刷新（结果落库）+ 网页 9 盐本地重签 captcha（对齐桌面版 refreshWebCaptcha 语义）。 */
     private fun xunlei(): XunleiApi {
         val api = XunleiApi()
+        // 手动粘贴 token 的账号没有走过登录流程，JWT sub 未缓存 → captcha/init 的 meta 缺
+        // user_id 会拿到降级 token（连 GET 都可能被拒）。装配时补解析一次。
+        api.cacheUserId(credentials.get(SharePlatform.XUNLEI.name).optString("accessToken"))
         api.refreshTokenProvider = { deviceId ->
             val account = credentials.get(SharePlatform.XUNLEI.name)
-            runCatching { api.refreshToken(account.optString("refreshToken"), deviceId, account.optString("authType")) }.getOrNull()
+            runCatching {
+                api.refreshToken(account.optString("refreshToken"), deviceId, account.optString("authType"))?.also { fresh ->
+                    // 刷新结果必须落库：refresh_token 是一次性的，不落库下次会拿已消费的旧 token
+                    credentials.save(SharePlatform.XUNLEI.name, account.put("accessToken", fresh.first).put("refreshToken", fresh.second))
+                }
+            }.getOrNull()
+        }
+        // 网页 9 盐本地重签:panCallInternal 里它优先于 App 10 盐签名——
+        // access_token 实为网页 client_id 签发(网页验证码登录/手动粘贴网页 token)的账号靠它续 captcha;
+        // 真 App 通道账号网页签会被判 client_id not match → 返回 null,继续走原 App 签,行为不变。
+        api.webCaptchaRefresher = { deviceId, action ->
+            when (val init = api.initWebCaptcha(deviceId, action)) {
+                is com.yunx.app.data.network.WebCaptchaInit.Ok -> init.captcha
+                else -> null
+            }
         }
         return api
     }

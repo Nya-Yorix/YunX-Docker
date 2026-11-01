@@ -945,15 +945,16 @@ class XunleiApi(
                     }
                 }
                 if (!anonymous && err == "captcha_invalid" && attempt == 0) {
-                    // client_id 配错：回退网页会话也救不回来（网页会话同样只认网页 client_id），
-                    // 只会白等十几秒再失败，所以直接报错。
-                    if (isClientIdMismatch(json)) {
-                        throw QuarkApiException("验证码与当前登录方式不匹配，请重新登录迅雷网页版")
+                    // captcha 与 access_token 的 client_id 不匹配 = 当前签名通道与 token 归属不符：
+                    // 网页 token 配 App 签、App token 配网页签都会被判「验证码无效」。
+                    // 交叉换 App 10 盐签名重签一次（本地签名，几百毫秒）；通道正确的场景仍按
+                    // 「注入的网页重签 → App 签」取。两边都被拒时由 attempt=1 抛出上游原文。
+                    val newCaptcha = if (isClientIdMismatch(json)) {
+                        initPanCaptcha(deviceId, action, token)?.let { PanCaptcha(it, Long.MAX_VALUE) }
+                    } else {
+                        webCaptchaRefresher(deviceId, action)
+                            ?: initPanCaptcha(deviceId, action, token)?.let { PanCaptcha(it, Long.MAX_VALUE) }
                     }
-                    // 网页账号：本地 9 盐签名换 token（被拒时由实现内部回退网页会话）；
-                    // 非网页账号返回 null，继续走原来的 App 通道 captcha_sign 重签。
-                    val newCaptcha = webCaptchaRefresher(deviceId, action)
-                        ?: initPanCaptcha(deviceId, action, token)?.let { PanCaptcha(it, Long.MAX_VALUE) }
                     if (newCaptcha != null) {
                         refreshedCaptchas[deviceId] = newCaptcha
                         token = newCaptcha.token
