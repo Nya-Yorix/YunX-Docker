@@ -40,7 +40,18 @@ select{background:var(--surface)}
 .inline-status{min-height:24px;font-size:12px;color:var(--secondary);margin:12px 0;overflow-wrap:anywhere}
 .inline-status.error,.error{color:var(--accent)}
 .inline-status.success,.complete{color:var(--success)}
-.global-status{padding:8px 0;border-bottom:1px solid var(--line)}
+/* ---------- 顶部居中 toast(全部操作提示;Popover 进 top layer,老浏览器降级 fixed) ---------- */
+#toasts{position:fixed;top:14px;left:50%;transform:translateX(-50%);margin:0;padding:0;border:0;background:transparent;width:max-content;max-width:min(640px,calc(100vw - 32px));display:flex;flex-direction:column;align-items:center;z-index:200;pointer-events:none}
+#toasts:popover-open{display:flex}
+.toast{pointer-events:auto;cursor:pointer;display:flex;align-items:center;gap:10px;min-height:0;width:max-content;max-width:100%;margin-bottom:8px;padding:9px 18px;border:1px solid var(--line);border-radius:999px;background:var(--surface);box-shadow:0 6px 20px rgba(0,0,0,.12);font-size:13px;font-weight:400;color:var(--text);text-align:left;animation:fade-up var(--motion-base) var(--ease-out) both;transition:border-color var(--motion-fast) ease,transform var(--motion-fast) var(--ease-out);overflow-wrap:anywhere}
+.toast:hover{border-color:var(--visible);transform:translateY(-1px)}
+.toast:active{transform:scale(.99)}
+.toast-dot{width:8px;height:8px;border-radius:50%;background:var(--success);flex-shrink:0}
+.toast-error{border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+.toast-error .toast-dot{background:var(--accent)}
+.toast-leaving{animation:toast-out var(--motion-base) var(--ease-out) forwards;overflow:hidden}
+.toast-quick{animation:toast-out var(--motion-fast) ease-out forwards;overflow:hidden}
+@keyframes toast-out{to{opacity:0;transform:translateY(-6px);height:0;padding-top:0;padding-bottom:0;margin-bottom:0;border-width:0}}
 .toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .sidebar{position:fixed;inset:0 auto 0 0;width:208px;border-right:1px solid var(--line);padding:32px 16px;display:flex;flex-direction:column;background:var(--bg);z-index:10}
 .brand{display:flex;align-items:center;gap:12px;padding:0 8px 40px;text-decoration:none;font-weight:500}
@@ -69,19 +80,19 @@ footer{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;paddin
 .empty>svg{width:32px;height:32px}
 .resolve-form{max-width:760px}
 .resolve-form>label{margin-top:0}
-/* 解析输入与「保存的链接」双栏:面板总高与表单对齐 —— saved-links 静态内容为空(内衬绝对定位),
-   不参与行高计算,行高即表单高;align-self:stretch 把面板拉到与表单等高,窄屏回退堆叠 */
-.resolve-top{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,380px);gap:40px;align-items:start}
-.saved-links{position:relative;align-self:stretch;min-width:0}
+/* 解析输入与「保存的链接」双栏:输入框限宽 480px,历史面板占余下全宽;
+   面板顶对齐表单、底部向下加高 96px(stretch+负 margin),容器 margin-bottom 让位防压下方内容 */
+.resolve-top{display:grid;grid-template-columns:minmax(0,420px) minmax(0,1fr);gap:40px;align-items:start;margin-bottom:96px}
+.saved-links{position:relative;align-self:stretch;margin-bottom:-96px;min-width:0}
 .library-panel{position:absolute;inset:0;display:flex;flex-direction:column;min-height:0}
 /* 卡片条:行数按面板高度自动铺满(auto-fill+1fr),列数无限向右延伸,悬停滚轮横向滚 */
 .library-scroll{flex:1;min-height:0;overflow-x:auto;overflow-y:hidden;display:grid;
   grid-auto-flow:column;grid-template-rows:repeat(auto-fill,minmax(64px,1fr));grid-auto-columns:minmax(190px,1fr);gap:8px;
   scrollbar-width:thin;scrollbar-color:var(--visible) transparent}
-.library-scroll::-webkit-scrollbar{height:6px}
-.library-scroll::-webkit-scrollbar-track{background:transparent}
-.library-scroll::-webkit-scrollbar-thumb{background:var(--visible);border-radius:999px}
-.library-scroll::-webkit-scrollbar-thumb:hover{background:var(--secondary)}
+.library-scroll::-webkit-scrollbar{height:8px}
+.library-scroll::-webkit-scrollbar-track{background:color-mix(in srgb,var(--visible) 22%,transparent);border-radius:999px}
+.library-scroll::-webkit-scrollbar-thumb{background:var(--visible);border-radius:999px;border:2px solid transparent;background-clip:padding-box}
+.library-scroll::-webkit-scrollbar-thumb:hover{background:var(--secondary);border-width:1px}
 .library-scroll:has(>.empty){display:flex}
 .library-scroll>.empty{flex:1;padding:24px 8px}
 .library-card{position:relative;display:flex;align-items:flex-start;gap:10px;padding:12px 34px 12px 12px;
@@ -247,7 +258,7 @@ dialog::backdrop{background:rgba(0,0,0,.8)}
 .login-main h2{margin-bottom:32px}
 @media(min-width:1600px){#app main{margin-right:auto}.sidebar{width:232px}#app main{margin-left:232px}}
 @media(max-width:1100px){#app main{padding:24px 24px 0}.sidebar{width:184px}#app main{margin-left:184px}.file-time{display:none}.file-header,.file-row{grid-template-columns:24px 20px minmax(0,1fr) 90px 44px}.account-card{padding:20px}.settings-section{grid-template-columns:160px minmax(0,1fr)}}
-@media(max-width:900px){.resolve-top{grid-template-columns:1fr}.saved-links{min-height:240px}}
+@media(max-width:900px){.resolve-top{grid-template-columns:1fr;margin-bottom:0}.saved-links{min-height:240px;margin-bottom:0}}
 @media(max-width:720px){
   #app main{margin-left:0;padding:20px 20px 100px}
   .sidebar{inset:auto 0 0;width:100%;padding:8px 4px calc(8px + env(safe-area-inset-bottom));background:var(--bg);border-right:0;border-top:1px solid var(--line)}

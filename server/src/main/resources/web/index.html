@@ -38,7 +38,6 @@
     </aside>
     <main>
       <div class="workspace-top"><span id="page-label" class="eyebrow">WORKSPACE / CLOUD</span><span class="server-state"><span class="signal"></span>服务器在线</span><button id="mobile-logout" class="icon-button" type="button" aria-label="退出登录" title="退出登录"><i data-lucide="log-out"></i></button></div>
-      <p id="notice" class="inline-status global-status" role="status" hidden></p>
       <section id="cloud-view" hidden>
         <div class="page-heading"><div><span class="eyebrow">YOUR FILES</span><h1 id="cloud-title">我的网盘</h1></div><button id="cloud-add" class="secondary" type="button"><i data-lucide="plus"></i>添加账号</button></div>
         <div id="cloud-browser"></div>
@@ -168,5 +167,6 @@
       <div class="toolbar"><button id="cloud-action-submit" class="primary" type="submit">确认</button><button id="cloud-action-cancel" class="secondary" type="button">取消</button></div>
     </form>
   </dialog>
+  <div id="toasts" popover="manual" aria-live="polite"></div>
 </body>
 </html>

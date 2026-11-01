@@ -30,10 +30,42 @@ function command(label, name, action, cls = "icon-button") {
   node.addEventListener("click", () => busy(node, action));
   return node;
 }
-function notice(text, error = false, target = "notice") {
-  const node = $(target); node.textContent = text; node.hidden = false;
-  node.classList.toggle("error", error); node.classList.toggle("success", !error && !!text);
+// ---- 顶部居中 toast:全部操作提示统一走这里(含弹窗内;容器经 Popover API 进 top layer,
+//      老浏览器自动降级为普通 fixed,仅影响弹窗内提示可见性)----
+const TOAST_INFO_MS = 2500, TOAST_ERROR_MS = 6000, TOAST_MAX = 3;
+const toasts = $("toasts");
+let toastLayerShown = false;
+function ensureToastLayer() {
+  if (toastLayerShown || typeof toasts.showPopover !== "function") return;
+  try { toasts.showPopover(); toastLayerShown = true; } catch { /* 已展示或不支持:走 fixed 降级 */ }
 }
+function dismissToast(node, quick = false) {
+  if (!node || !node.isConnected || node.dataset.leaving) return;
+  node.dataset.leaving = "1";
+  // 先钉住当前高度再收到 0,下方条目随 margin/height 收缩平滑补位
+  node.style.height = node.offsetHeight + "px";
+  node.classList.add(quick ? "toast-quick" : "toast-leaving");
+  // reduced-motion 下动画被禁用,animationend 不触发:超时兜底移除
+  node.addEventListener("animationend", () => node.remove(), { once: true });
+  setTimeout(() => node.remove(), quick ? 260 : 320);
+}
+function notice(text, error = false, target = "notice") {
+  if (!text) return; // 原语义「清空提示」→ 无操作
+  ensureToastLayer();
+  // 溢出(上限 3):挤旧留新 —— 非错误优先快速淡出,全是错误时挤掉最旧的错误
+  while (toasts.children.length >= TOAST_MAX) {
+    const oldest = [...toasts.children].find(n => !n.dataset.error) || toasts.firstElementChild;
+    dismissToast(oldest, true);
+  }
+  const node = el("button", "toast" + (error ? " toast-error" : " toast-ok"));
+  node.type = "button"; node.dataset.error = error ? "1" : "";
+  node.title = "点击关闭";
+  node.append(el("i", "toast-dot"), el("span", "", text));
+  node.addEventListener("click", () => dismissToast(node, true));
+  toasts.prepend(node);
+  setTimeout(() => dismissToast(node), error ? TOAST_ERROR_MS : TOAST_INFO_MS);
+}
+function clearToasts() { [...toasts.children].forEach(n => dismissToast(n, true)); }
 async function busy(control, action, target = "notice") {
   if (control.disabled) return;
   control.disabled = true;
@@ -107,7 +139,7 @@ async function view(name) {
     if (button.dataset.view === name) button.setAttribute("aria-current","page"); else button.removeAttribute("aria-current");
   });
   $("page-label").textContent = "WORKSPACE / " + name.toUpperCase();
-  $("notice").hidden = true;
+  clearToasts();
   if (name === "tasks") { seenTaskIds.clear(); await refreshTasks(); }
   if (name === "resolve") await loadLibrary();
   if (name === "accounts") { accountsAnimateNext = true; await loadAccounts(); refreshProfiles(); }
