@@ -41,8 +41,9 @@ select{background:var(--surface)}
 .inline-status.error,.error{color:var(--accent)}
 .inline-status.success,.complete{color:var(--success)}
 /* ---------- 顶部居中 toast(全部操作提示;Popover 进 top layer,老浏览器降级 fixed) ---------- */
-#toasts{position:fixed;top:14px;left:50%;transform:translateX(-50%);margin:0;padding:0;border:0;background:transparent;width:max-content;max-width:min(640px,calc(100vw - 32px));display:flex;flex-direction:column;align-items:center;z-index:200;pointer-events:none}
-#toasts:popover-open{display:flex}
+#toasts{position:fixed;inset:auto;top:14px;right:auto;bottom:auto;left:50%;transform:translateX(-50%);margin:0;padding:0;border:0;background:none;color:var(--text);overflow:visible;width:max-content;height:max-content;max-width:min(640px,calc(100vw - 32px));display:flex;flex-direction:column;align-items:center;z-index:200;pointer-events:none}
+#toasts:popover-open{display:flex;background:none;color:var(--text)}
+#toasts::backdrop{background:none;display:none}
 .toast{pointer-events:auto;cursor:pointer;display:flex;align-items:center;gap:10px;min-height:0;width:max-content;max-width:100%;margin-bottom:8px;padding:9px 18px;border:1px solid var(--line);border-radius:999px;background:var(--surface);box-shadow:0 6px 20px rgba(0,0,0,.12);font-size:13px;font-weight:400;color:var(--text);text-align:left;animation:fade-up var(--motion-base) var(--ease-out) both;transition:border-color var(--motion-fast) ease,transform var(--motion-fast) var(--ease-out);overflow-wrap:anywhere}
 .toast:hover{border-color:var(--visible);transform:translateY(-1px)}
 .toast:active{transform:scale(.99)}
